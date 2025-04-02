@@ -1,5 +1,7 @@
 import os
 import logging
+import time
+
 from config import TOKEN, GigaChat_API_KEY
 from user import User
 from main import bot, dp, user_data
@@ -20,6 +22,7 @@ logging.basicConfig(level=logging.INFO)
 class FileStates(StatesGroup):
     waiting_for_tz = State()
     waiting_for_result = State()
+    question_input = State()
 
 
 # Обработчик команды /start
@@ -62,8 +65,12 @@ async def handle_tz_file(message: types.Message, state: FSMContext):
     with open(user.tz_file_path, "wb") as new_file:
         new_file.write(downloaded_file.read())
 
-    await message.answer("Файл ТЗ успешно загружен. Теперь загрузите файл с результатом.")
-    await state.set_state(FileStates.waiting_for_result)
+    if user_data[user_id].state == 'question_input':
+        await message.answer("Файл успешно загружен, теперь введите ваш вопрос.")
+        await state.set_state(FileStates.question_input)
+    else:
+        await message.answer("Файл ТЗ успешно загружен. Теперь загрузите файл с результатом.")
+        await state.set_state(FileStates.waiting_for_result)
 
 # Обработчик загрузки файла результата
 @dp.message(FileStates.waiting_for_result, lambda message: message.content_type == "document")
@@ -84,7 +91,16 @@ async def handle_result_file(message: types.Message, state: FSMContext):
     await message.answer("Файл с результатом успешно загружен. Начинаю анализ...")
     await utils.analyze_files(user_id)
 
-    await state.set_state(None)  # Сбрасываем состояние
+    await state.set_state(None)
+    await start(message)
+
+@dp.message(FileStates.question_input)
+async def handle_result_file(message: types.Message, state: FSMContext):
+    user_id = message.chat.id
+    user = user_data[user_id]
+
+    await message.answer("Ответ...")
+    await start(message)
 
 # Обработчик текстовых сообщений
 @dp.message(lambda message: user_data[message.chat.id].state == 'asking_question')
@@ -115,8 +131,22 @@ async def callback_inline(call: types.CallbackQuery, state: FSMContext):
         await utils.show_questions_options(call.message.chat.id)
     elif call.data == 'analyze_docs':
         await bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.message_id)
+        keyboard = kb.categories_keyboard
+        await call.message.answer("Выберите, по какому разделу будем сравнивать.", reply_markup=keyboard)
+    elif call.data == 'arch_category':
         await state.set_state(FileStates.waiting_for_tz)
         await bot.send_message(user_id, "Пожалуйста, загрузите файл с ТЗ.")
+    elif call.data == 'constr_category':
+        await state.set_state(FileStates.waiting_for_tz)
+        await bot.send_message(user_id, "Пожалуйста, загрузите файл с ТЗ.")
+    elif call.data == 'eng_category':
+        await state.set_state(FileStates.waiting_for_tz)
+        await bot.send_message(user_id, "Пожалуйста, загрузите файл с ТЗ.")
+    elif call.data == 'question':
+        await bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.message_id)
+        user_data[call.message.chat.id].state = 'question_input'
+        await state.set_state(FileStates.waiting_for_tz)
+        await bot.send_message(user_id, "Пожалуйста, загрузите файл, по которому хотите задать вопрос.")
     else:
         await call.answer("Ошибка!")
 

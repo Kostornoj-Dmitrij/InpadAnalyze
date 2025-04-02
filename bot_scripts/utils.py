@@ -345,6 +345,18 @@ async def analyze_files(user_id):
     final_report_path = ""
     await bot.send_message(user_id, "Начинаю анализ документов... Это может занять некоторое время.")
 
+    empty_report_path = f"temp/{user_id}_empty_report.txt"
+
+    async with aiofiles.open(empty_report_path, "w", encoding="utf-8") as f:
+        await f.write("Отчёт")  # Записываем пустую строку
+
+    async with aiofiles.open(empty_report_path, "rb") as report_file:
+        await bot.send_document(
+            user_id,
+            types.FSInputFile(empty_report_path),
+            caption="✅ Отчёт готов"
+        )
+    return
     try:
         # Извлекаем текст из PDF
         technical_text, result_text = await asyncio.gather(
