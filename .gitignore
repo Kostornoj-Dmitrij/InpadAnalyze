@@ -1,0 +1,15 @@
+data/
+
+venv/
+
+__pycache__/
+*.pyc
+*.pyo
+
+.vscode/
+.idea/
+
+logs/
+*.log
+
+bot_scripts/config.py
