@@ -56,7 +56,7 @@ def extract_text_from_pdf(pdf_path: str) -> str:
     text = []
     for page_num, page in enumerate(reader.pages, start=1):
         content = page.extract_text() or ""
-        text.append(f"\n--- Страница {page_num} ---\n{content}")
+        text.append(f"\n=== НАЧАЛО СТРАНИЦЫ {page_num} ===\n{content}\n=== КОНЕЦ СТРАНИЦЫ {page_num} ===")
     return "\n".join(text)
 
 def split_text(text, max_tokens=28000, overlap=1000):
@@ -67,11 +67,11 @@ def split_text(text, max_tokens=28000, overlap=1000):
     pages = []
     current_page = None
     for line in text.split('\n'):
-        if line.startswith('--- Страница'):
+        if line.startswith('=== НАЧАЛО СТРАНИЦЫ'):
             if current_page is not None:
                 pages.append(current_page)
-            current_page = {'num': int(line.split()[2]), 'text': ''}
-        elif current_page is not None:
+            current_page = {'num': int(line.split()[3]), 'text': ''}
+        elif current_page is not None and not line.startswith('=== КОНЕЦ СТРАНИЦЫ'):
             current_page['text'] += line + '\n'
     if (current_page is not
 
@@ -85,7 +85,7 @@ def split_text(text, max_tokens=28000, overlap=1000):
     current_tokens = 0
 
     for page in pages:
-        page_text = f"\n\n--- Страница {page['num']} ---\n{page['text']}"
+        page_text = f"\n\n=== СТРАНИЦА {page['num']} ===\n{page['text']}"
         page_tokens = len(tokenizer.encode(page_text))
 
         if current_tokens + page_tokens > max_tokens:
@@ -173,7 +173,9 @@ async def process_chunk(result_chunk, technical_db):
     # Извлекаем номера страниц из чанка результата
     result_pages = set()
     for line in result_chunk.split('\n'):
-        if line.startswith('--- Страница'):
+        if line.startswith('=== СТРАНИЦА'):
+            result_pages.add(int(line.split()[2]))
+        elif line.startswith('=== НАЧАЛО СТРАНИЦЫ'):
             result_pages.add(int(line.split()[2]))
 
     similar_sections = find_similar_sections(result_chunk, technical_db)
@@ -182,8 +184,13 @@ async def process_chunk(result_chunk, technical_db):
 
     # Добавляем информацию о страницах результата к каждому ответу
     if result_pages:
-        page_info = f"\n(Анализируемые страницы результата: {', '.join(map(str, sorted(result_pages)))})"
-        results = [r + page_info for r in results]
+        pages_sorted = sorted(result_pages)
+        if len(pages_sorted) > 1:
+            page_info = f"\n(Анализируемые страницы результата: {pages_sorted[0]}-{pages_sorted[-1]})"
+        else:
+            page_info = f"\n(Анализируемая страница результата: {pages_sorted[0]})"
+
+        results = [r + page_info for r in results if not r.strip().endswith(')')]
 
     return results
 
