@@ -1,141 +1,129 @@
 import os
 import asyncio
 from datetime import datetime
-
+import aiohttp
 import requests
 from PyPDF2 import PdfReader
 from bot.config import OpenRouter_API_KEY, OPENAI_API_KEY
 from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings
-from tqdm import tqdm
+from tqdm.asyncio import tqdm_asyncio
 import tiktoken
 import re
+import aiofiles
 
-async def extract_architecture_requirements(text: str) -> str:
-    """Извлекает архитектурные требования по частям"""
-    chunks = split_text(text, max_tokens=28000, overlap=500)
-    all_requirements = []
-
-    for chunk in chunks:
-        messages = [
-            {
-                "role": "system",
-                "content": "Извлекай ТОЛЬКО информацию архитектурно-строительного раздела (материалы стен и полов, перегородки, фасады и так далее) с указанием страниц [стр. X]. Пропускай общую информацию."
-            },
-            {
-                "role": "user",
-                "content": f"Извлеки архитектурно-строительные требования (если они есть) из этого фрагмента:\n{chunk}"
-                "Если в тексте есть отметки страниц: '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' ИЛИ '=== КОНЕЦ СТРАНИЦЫ {page_num} ===', и ты нашёл на этой странице какое-то требование, то НИ В КОЕМ СЛУЧАЕ НЕ УДАЛЯЙ МЕТКИ, мне нужно чтобы найденные тобой требования были абсолютно в том же виде окантованы этими метками!)"
-            }
-        ]
-
-        try:
-            response = requests.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={"Authorization": f"Bearer {OpenRouter_API_KEY}", "Content-Type": "application/json"},
-                json={"model": "deepseek/deepseek-chat:free", "messages": messages},
-                timeout=60
-            )
-            if response.status_code == 200:
-                print('Отправлен запрос')
-                result = response.json()
-                if 'choices' in result and len(result['choices']) > 0:
-                    content = result['choices'][0]['message']['content']
-                    if content.strip():
-                        all_requirements.append(content)
-                else:
-                    print("Неожиданный формат ответа от API:", result)
-            else:
-                print(f"Ошибка при запросе к API: {response.status_code}, {response.text}")
-                return ""
-        except Exception as e:
-            print(f"Ошибка извлечения требований: {e}")
-
-    combined = "\n".join(filter(None, all_requirements))
-    return combined
-
-async def extract_structural_requirements(text: str) -> str:
-    """Извлекает конструктивные требования по частям"""
-    chunks = split_text(text, max_tokens=28000, overlap=500)
-    all_requirements = []
-
-    for chunk in chunks:
-        messages = [
-            {
-                "role": "system",
-                "content": "Извлекай ТОЛЬКО информацию конструктивного раздела (материалы, толщины, армирование) с указанием страниц [стр. X]. Пропускай общую информацию."
-            },
-            {
-                "role": "user",
-                "content": f"Извлеки конструктивные требования (если они есть) из этого фрагмента:\n{chunk}"
-                "Если в тексте есть отметки страниц: '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' ИЛИ '=== КОНЕЦ СТРАНИЦЫ {page_num} ===', и ты нашёл на этой странице какое-то требование, то НИ В КОЕМ СЛУЧАЕ НЕ УДАЛЯЙ МЕТКИ, мне нужно чтобы найденные тобой требования были абсолютно в том же виде окантованы этими метками!)"
-            }
-        ]
-
-        try:
-            response = requests.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={"Authorization": f"Bearer {OpenRouter_API_KEY}", "Content-Type": "application/json"},
-                json={"model": "deepseek/deepseek-chat:free", "messages": messages},
-                timeout=60
-            )
-            if response.status_code == 200:
-                print('Отправлен запрос')
-                result = response.json()
-                if 'choices' in result and len(result['choices']) > 0:
-                    content = result['choices'][0]['message']['content']
-                    if content.strip():
-                        all_requirements.append(content)
-                else:
-                    print("Неожиданный формат ответа от API:", result)
-            else:
-                print(f"Ошибка при запросе к API: {response.status_code}, {response.text}")
-                return ""
-        except Exception as e:
-            print(f"Ошибка извлечения требований: {e}")
-
-    combined = "\n".join(filter(None, all_requirements))
-    return combined
-
-async def extract_engineer_requirements(text: str) -> str:
+async def extract_requirements(text: str, mode: str) -> str:
     """Извлекает инженерные требования по частям"""
-    chunks = split_text(text, max_tokens=28000, overlap=500)
+    chunks = await split_text(text, max_tokens=28000, overlap=500)
     all_requirements = []
 
-    for chunk in chunks:
-        messages = [
-            {
-                "role": "system",
-                "content": "Извлекай ТОЛЬКО информацию инженерного раздела (производители оборудования отопления, вентиляции, кондициоонирования) с указанием страниц [стр. X]. Пропускай общую информацию."
-            },
-            {
-                "role": "user",
-                "content": f"Извлеки инженерные требования (если они есть) из этого фрагмента:\n{chunk}"
-                "Если в тексте есть отметки страниц: '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' ИЛИ '=== КОНЕЦ СТРАНИЦЫ {page_num} ===', и ты нашёл на этой странице какое-то требование, то НИ В КОЕМ СЛУЧАЕ НЕ УДАЛЯЙ МЕТКИ, мне нужно чтобы найденные тобой требования были абсолютно в том же виде окантованы этими метками!)"
-            }
-        ]
-
-        try:
-            response = requests.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={"Authorization": f"Bearer {OpenRouter_API_KEY}", "Content-Type": "application/json"},
-                json={"model": "deepseek/deepseek-chat:free", "messages": messages},
-                timeout=60
-            )
-            if response.status_code == 200:
-                print('Отправлен запрос')
-                result = response.json()
-                if 'choices' in result and len(result['choices']) > 0:
-                    content = result['choices'][0]['message']['content']
-                    if content.strip():
-                        all_requirements.append(content)
-                else:
-                    print("Неожиданный формат ответа от API:", result)
+    async with aiohttp.ClientSession() as session:
+        for chunk in chunks:
+            if mode == 'arch':
+                messages = [
+                    {
+                        "role": "system",
+                        "content": "Извлекай ТОЛЬКО информацию архитектурно-строительного раздела (материалы стен и полов, перегородки, фасады и т. д.) с указанием страниц."
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Извлеки архитектурно-строительные требования (если они есть) из этого фрагмента:\n{chunk}"
+                                    "Если в тексте есть отметки страниц: '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' ИЛИ '=== КОНЕЦ СТРАНИЦЫ {page_num} ===', и ты нашёл на этой странице какое-то требование, то НИ В КОЕМ СЛУЧАЕ НЕ УДАЛЯЙ МЕТКИ, мне нужно чтобы найденные тобой требования были абсолютно в том же виде окантованы этими метками! ВСЕ МЕТКИ СТРАНИЦ ДОЛЖНЫ БЫТЬ В ФОРМАТЕ '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' текст страницы... '=== КОНЕЦ СТРАНИЦЫ {page_num} ===')"                    }
+                ]
+            elif mode == 'structural':
+                messages = [
+                    {
+                        "role": "system",
+                        "content": "Извлекай ТОЛЬКО информацию конструктивного раздела (материалы, толщины, армирование и т. д.) с указанием страниц."
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Извлеки конструктивные требования (если они есть) из этого фрагмента:\n{chunk}"
+                                   "Если в тексте есть отметки страниц: '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' ИЛИ '=== КОНЕЦ СТРАНИЦЫ {page_num} ===', и ты нашёл на этой странице какое-то требование, то НИ В КОЕМ СЛУЧАЕ НЕ УДАЛЯЙ МЕТКИ, мне нужно чтобы найденные тобой требования были абсолютно в том же виде окантованы этими метками! ВСЕ МЕТКИ СТРАНИЦ ДОЛЖНЫ БЫТЬ В ФОРМАТЕ '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' текст страницы... '=== КОНЕЦ СТРАНИЦЫ {page_num} ===')"
+                    }
+                ]
+            elif mode == 'water_supply':
+                messages = [
+                    {
+                        "role": "system",
+                        "content": "Извлекай ТОЛЬКО требования к системе водоснабжения (трубопроводы, насосы, фильтры, производители оборудования и т. д.) с указанием страниц."
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Извлеки требования к системе водоснабжения(если они есть) из этого фрагмента:\n{chunk}"
+                                   "Если в тексте есть отметки страниц: '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' ИЛИ '=== КОНЕЦ СТРАНИЦЫ {page_num} ===', и ты нашёл на этой странице какое-то требование, то НИ В КОЕМ СЛУЧАЕ НЕ УДАЛЯЙ МЕТКИ, мне нужно чтобы найденные тобой требования были абсолютно в том же виде окантованы этими метками! ВСЕ МЕТКИ СТРАНИЦ ДОЛЖНЫ БЫТЬ В ФОРМАТЕ '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' текст страницы... '=== КОНЕЦ СТРАНИЦЫ {page_num} ===')"
+                    }
+                ]
+            elif mode == 'water_drain':
+                messages = [
+                    {
+                        "role": "system",
+                        "content": "Извлекай ТОЛЬКО требования к системе водоотведения (канализация, очистные сооружения, материалы труб, производители оборудования и т. д.) с указанием страниц."
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Извлеки требования к системе водоотведения(если они есть) из этого фрагмента:\n{chunk}"
+                                   "Если в тексте есть отметки страниц: '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' ИЛИ '=== КОНЕЦ СТРАНИЦЫ {page_num} ===', и ты нашёл на этой странице какое-то требование, то НИ В КОЕМ СЛУЧАЕ НЕ УДАЛЯЙ МЕТКИ, мне нужно чтобы найденные тобой требования были абсолютно в том же виде окантованы этими метками! ВСЕ МЕТКИ СТРАНИЦ ДОЛЖНЫ БЫТЬ В ФОРМАТЕ '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' текст страницы... '=== КОНЕЦ СТРАНИЦЫ {page_num} ===')"
+                    }
+                ]
+            elif mode == 'heat_network':
+                messages = [
+                    {
+                        "role": "system",
+                        "content": "Извлекай ТОЛЬКО требования к тепловым сетям и ИТП (температурные режимы, производители оборудования, схемы подключений и т. д.) с указанием страниц."
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Извлеки требования к тепловым сетям и ИТП(если они есть) из этого фрагмента:\n{chunk}"
+                                   "Если в тексте есть отметки страниц: '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' ИЛИ '=== КОНЕЦ СТРАНИЦЫ {page_num} ===', и ты нашёл на этой странице какое-то требование, то НИ В КОЕМ СЛУЧАЕ НЕ УДАЛЯЙ МЕТКИ, мне нужно чтобы найденные тобой требования были абсолютно в том же виде окантованы этими метками! ВСЕ МЕТКИ СТРАНИЦ ДОЛЖНЫ БЫТЬ В ФОРМАТЕ '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' текст страницы... '=== КОНЕЦ СТРАНИЦЫ {page_num} ===')"
+                    }
+                ]
+            elif mode == 'hvac':
+                messages = [
+                    {
+                        "role": "system",
+                        "content": "Извлекай ТОЛЬКО требования к отоплению, вентиляции и кондиционированию(типы систем, производители оборудования, параметры воздуха и т. д.) с указанием страниц."
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Извлеки требования к системам отопления, вентиляции и кондиционирования(если они есть) из этого фрагмента:\n{chunk}"
+                                   "Если в тексте есть отметки страниц: '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' ИЛИ '=== КОНЕЦ СТРАНИЦЫ {page_num} ===', и ты нашёл на этой странице какое-то требование, то НИ В КОЕМ СЛУЧАЕ НЕ УДАЛЯЙ МЕТКИ, мне нужно чтобы найденные тобой требования были абсолютно в том же виде окантованы этими метками! ВСЕ МЕТКИ СТРАНИЦ ДОЛЖНЫ БЫТЬ В ФОРМАТЕ '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' текст страницы... '=== КОНЕЦ СТРАНИЦЫ {page_num} ===')"
+                    }
+                ]
             else:
-                print(f"Ошибка при запросе к API: {response.status_code}, {response.text}")
-                return ""
-        except Exception as e:
-            print(f"Ошибка извлечения требований: {e}")
+                messages = [
+                    {
+                        "role": "system",
+                        "content": "Извлекай ТОЛЬКО информацию инженерного раздела (производители оборудования отопления, вентиляции, кондиционирования, водоснабжения и т. д.) с указанием страниц."
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Извлеки инженерные требования (если они есть) из этого фрагмента:\n{chunk}"
+                                    "Если в тексте есть отметки страниц: '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' ИЛИ '=== КОНЕЦ СТРАНИЦЫ {page_num} ===', и ты нашёл на этой странице какое-то требование, то НИ В КОЕМ СЛУЧАЕ НЕ УДАЛЯЙ МЕТКИ, мне нужно чтобы найденные тобой требования были абсолютно в том же виде окантованы этими метками! ВСЕ МЕТКИ СТРАНИЦ ДОЛЖНЫ БЫТЬ В ФОРМАТЕ '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' текст страницы... '=== КОНЕЦ СТРАНИЦЫ {page_num} ===')"                    }
+                ]
+
+
+            try:
+                async with session.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {OpenRouter_API_KEY}", "Content-Type": "application/json"},
+                    json={"model": "deepseek/deepseek-chat:free", "messages": messages},
+                    timeout=aiohttp.ClientTimeout(total=90)
+                ) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        if 'choices' in result and len(result['choices']) > 0:
+                            content = result['choices'][0]['message']['content']
+                            if content.strip():
+                                all_requirements.append(content)
+                        else:
+                            print("Неожиданный формат ответа от API:", result)
+                    else:
+                        print(f"Ошибка при запросе к API: {response.status}, {await response.text()}")
+                        return ""
+            except Exception as e:
+                print(f"Ошибка извлечения требований: {str(e)}")
+                continue
 
     combined = "\n".join(filter(None, all_requirements))
     return combined
@@ -145,48 +133,99 @@ async def extract_sections_from_ts(text: str, mode: str = "default") -> dict:
     """Разбивает текст ТЗ на разделы с возможностью нейросетевого анализа"""
     sections = {}
 
-    section_titles = {
+    ALL_SECTION_TITLES = [
+        "Основные данные",
+        "Архитектурно-строительные решения",
+        "Отделка помещений",
+        "Конструктивные решения",
+        "Инженерные системы",
+        "Инженерные решения",
+        "Раздел «Отопление, вентиляция и кондиционирование»",
+        "Раздел «Водоснабжение и канализация»",
+        "Раздел «Слаботочные системы»",
+        "Схема планировочной организации земельного участка",
+    ]
+
+    TARGET_TITLES = {
         "arch": ["Архитектурно-строительные решения"],
-        "structural": ["Конструктивные решения", "Конструкции"],
-        "engineer": ["Инженерные системы", "Оборудование"]
+        "structural": ["Конструктивные решения"],
+        "engineer": ["Инженерные системы"],
+        "water_supply": ["Водоснабжение и канализация"],
+        "water_drain": ["Водоснабжение и канализация"],
+        "heat_network": ["Отопление, вентиляция и кондиционирование"],
+        "hvac": ["Отопление, вентиляция и кондиционирование"]
     }
 
-    current_titles = section_titles.get(mode, [])
-    pattern = '|'.join(re.escape(title) for title in current_titles)
-    matches = list(re.finditer(pattern, text, re.IGNORECASE))
+    if mode == "engineer":
+        print("Выбран нейросетевой парсинг для инженерного раздела")
+        structural_text = await extract_requirements(text, mode)
+        if structural_text:
+            sections["Инженерные системы"] = structural_text
 
-    if matches:
-        for i, match in enumerate(matches):
+
+    all_pattern = '|'.join(re.escape(title) for title in ALL_SECTION_TITLES)
+    all_matches = list(re.finditer(all_pattern, text, re.IGNORECASE))
+
+    target_pattern = '|'.join(re.escape(title) for title in TARGET_TITLES.get(mode, []))
+    target_matches = list(re.finditer(target_pattern, text, re.IGNORECASE))
+
+    if target_matches:
+        print("Выбран обычный парсинг")
+        for match in target_matches:
             start = match.start()
-            end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
             title = match.group().strip()
-            sections[title] = text[start:end].strip()
+            is_last_section = title.lower() == ALL_SECTION_TITLES[-1].lower()
+            if is_last_section:
+                sections[title] = text[start:].strip()
+                print(f"Раздел '{title}' (последний) извлечен")
+                continue
+            next_section = next((m for m in all_matches if m.start() > start), None)
+            if next_section:
+                end = next_section.start()
+                sections[title] = text[start:end].strip()
+                print(f"Раздел '{title}' извлечен (конец: {next_section.group().strip()})")
+            else:
+                print(f"Раздел '{title}' найден, но конец не определен. Переход к нейросети.")
+                neural_text = await extract_requirements(text, mode)
+                if neural_text:
+                    sections[title] = neural_text
+
     else:
+        print("Выбран нейросетевой парсинг")
         if mode == "structural":
-            structural_text = await extract_structural_requirements(text)
+            structural_text = await extract_requirements(text, mode)
             if structural_text:
                 sections["Конструктивные решения"] = structural_text
         elif mode == "arch":
-            arch_text = await extract_architecture_requirements(text)
+            arch_text = await extract_requirements(text, mode)
             if arch_text:
                 sections["Архитектурно-строительные решения"] = arch_text
         elif mode == "engineer":
-            engineer_text = await extract_engineer_requirements(text)
+            engineer_text = await extract_requirements(text, mode)
             if engineer_text:
                 sections["Инженерные системы"] = engineer_text
-
     return sections
 
 
-def count_tokens(text):
-    """Подсчитывает количество токенов в тексте."""
+async def count_tokens(text: str) -> int:
+    """Асинхронная версия подсчета токенов"""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _sync_count_tokens, text)
+
+def _sync_count_tokens(text: str) -> int:
+    """Синхронная реализация подсчета токенов"""
     tokenizer = tiktoken.get_encoding("cl100k_base")
-    tokens = tokenizer.encode(text)
-    return len(tokens)
+    return len(tokenizer.encode(text))
 
 
-def extract_text_from_pdf(pdf_path: str) -> str:
-    """Извлекает текст с явными метками страниц"""
+async def extract_text_from_pdf(pdf_path: str) -> str:
+    """Асинхронная обёртка для синхронного извлечения текста из PDF"""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _sync_extract_text_from_pdf, pdf_path)
+
+
+def _sync_extract_text_from_pdf(pdf_path: str) -> str:
+    """Синхронная реализация извлечения текста из PDF"""
     reader = PdfReader(pdf_path)
     text = []
     for page_num, page in enumerate(reader.pages, start=1):
@@ -195,24 +234,33 @@ def extract_text_from_pdf(pdf_path: str) -> str:
     return "\n".join(text)
 
 
-def split_text(text, max_tokens=28000, overlap=1000):
+async def split_text(text: str, max_tokens: int = 28000, overlap: int = 1000) -> list[str]:
+    """Асинхронная версия разделения текста"""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _sync_split_text, text, max_tokens, overlap)
+
+def _sync_split_text(text: str, max_tokens: int, overlap: int) -> list[str]:
     """Разделяет текст на чанки с перекрытием, сохраняя информацию о страницах."""
     tokenizer = tiktoken.get_encoding("cl100k_base")
 
-    # Разделяем текст на страницы
     pages = []
     current_page = None
     for line in text.split('\n'):
-        if line.startswith('=== НАЧАЛО СТРАНИЦЫ'):
+        if line.startswith('=== НАЧАЛО СТРАНИЦЫ') or line.startswith('=== СТРАНИЦА'):
+            parts = line.split()
             if current_page is not None:
                 pages.append(current_page)
-            current_page = {'num': int(line.split()[3]), 'text': ''}
+            try:
+                page_num = int(parts[3] if parts[1] == 'НАЧАЛО' else parts[2])
+                current_page = {'num': page_num, 'text': ''}
+            except (IndexError, ValueError):
+                continue
+
         elif current_page is not None and not line.startswith('=== КОНЕЦ СТРАНИЦЫ'):
             current_page['text'] += line + '\n'
     if (current_page is not None):
         pages.append(current_page)
 
-    # Собираем чанки с информацией о страницах
     chunks = []
     current_chunk = ""
     current_chunk_pages = set()
@@ -223,17 +271,14 @@ def split_text(text, max_tokens=28000, overlap=1000):
         page_tokens = len(tokenizer.encode(page_text))
 
         if current_tokens + page_tokens > max_tokens:
-            # Добавляем текущий чанк
             if current_chunk:
                 chunk_header = f"Страницы: {', '.join(map(str, sorted(current_chunk_pages)))}\n"
                 chunks.append(chunk_header + current_chunk)
 
-            # Начинаем новый чанк с перекрытием
             current_chunk = ""
             current_chunk_pages = set()
             current_tokens = 0
 
-            # Добавляем часть предыдущей страницы для перекрытия
             if overlap > 0 and chunks:
                 prev_text = chunks[-1]
                 overlap_text = tokenizer.decode(tokenizer.encode(prev_text)[-overlap:])
@@ -244,7 +289,6 @@ def split_text(text, max_tokens=28000, overlap=1000):
         current_chunk_pages.add(page['num'])
         current_tokens += page_tokens
 
-    # Добавляем последний чанк
     if current_chunk:
         chunk_header = f"Страницы: {', '.join(map(str, sorted(current_chunk_pages)))}\n"
         chunks.append(chunk_header + current_chunk)
@@ -252,12 +296,16 @@ def split_text(text, max_tokens=28000, overlap=1000):
     return [chunk for chunk in chunks if chunk.strip()]
 
 
-def create_vector_db(text_chunks):
+async def create_vector_db(text_chunks):
+    """Асинхронная обёртка для создания векторной БД"""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _sync_create_vector_db, text_chunks)
+
+def _sync_create_vector_db(text_chunks):
     """Создаёт векторную базу данных для семантического поиска."""
     if not text_chunks:
         raise ValueError("Не получено данных для обработки")
 
-        # Фильтруем пустые чанки
     valid_chunks = [chunk for chunk in text_chunks if chunk.strip()]
 
     if not valid_chunks:
@@ -271,7 +319,13 @@ def create_vector_db(text_chunks):
         raise
 
 
-def find_similar_sections(query, vector_db, k=2):
+async def find_similar_sections(query: str, vector_db, k: int = 3):
+    """Асинхронная версия поиска похожих разделов"""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _sync_find_similar_sections, query, vector_db, k)
+
+
+def _sync_find_similar_sections(query: str, vector_db, k: int):
     """Находит похожие разделы в векторной базе данных."""
     return vector_db.similarity_search(query, k=k)
 
@@ -307,16 +361,19 @@ async def compare_documents(technical_spec, result_doc, mode: str = "arch"):
 
     try:
         print("Отправлен запрос")
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={"Authorization": f"Bearer {OpenRouter_API_KEY}", "Content-Type": "application/json"},
-            json={"model": "deepseek/deepseek-chat:free", "messages": messages}, timeout=30
-        )
-        if response.status_code == 200:
-            return response.json()["choices"][0]["message"]["content"]
-        else:
-            print(f"Ошибка при запросе к API: {response.status_code}, {response.text}")
-            return ""
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={"Authorization": f"Bearer {OpenRouter_API_KEY}", "Content-Type": "application/json"},
+                json={"model": "deepseek/deepseek-chat:free", "messages": messages},
+                timeout=aiohttp.ClientTimeout(total=90)
+            ) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    return result["choices"][0]["message"]["content"]
+                else:
+                    print(f"Ошибка при запросе к API: {response.status}, {response.text}")
+                    return ""
     except Exception as e:
         print(f"Ошибка при сравнении документов: {e}")
         return ""
@@ -324,7 +381,6 @@ async def compare_documents(technical_spec, result_doc, mode: str = "arch"):
 
 async def process_chunk(result_chunk, technical_db, mode: str = "arch"):
     """Обрабатывает чанк результата и сравнивает с похожими разделами ТЗ."""
-    # Извлекаем номера страниц из чанка результата
     result_pages = set()
     for line in result_chunk.split('\n'):
         if line.startswith('=== СТРАНИЦА'):
@@ -332,11 +388,10 @@ async def process_chunk(result_chunk, technical_db, mode: str = "arch"):
         elif line.startswith('=== НАЧАЛО СТРАНИЦЫ'):
             result_pages.add(int(line.split()[2]))
 
-    similar_sections = find_similar_sections(result_chunk, technical_db)
+    similar_sections = await find_similar_sections(result_chunk, technical_db)
     tasks = [compare_documents(section, result_chunk, mode) for section in similar_sections]
     results = await asyncio.gather(*tasks)
 
-    # Добавляем информацию о страницах результата к каждому ответу
     if result_pages:
         pages_sorted = sorted(result_pages)
         if len(pages_sorted) > 1:
@@ -349,7 +404,12 @@ async def process_chunk(result_chunk, technical_db, mode: str = "arch"):
     return results
 
 
-def split_text_summarized(text, max_tokens=13000):
+async def split_text_summarized(text: str, max_tokens: int = 13000) -> list[str]:
+    """Асинхронная версия разделения текста"""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _sync_split_text_summarized, text, max_tokens)
+
+def _sync_split_text_summarized(text: str, max_tokens: int) -> list[str]:
     """Разделяет текст на части по количеству токенов."""
     tokenizer = tiktoken.get_encoding("cl100k_base")
     tokens = tokenizer.encode(text)
@@ -390,21 +450,24 @@ async def structure_report_part(report_part):
 
                 "Сделай текст более читаемым, используй маркированные списки и чёткие формулировки. "
                 "Не добавляй новую информацию."
+                "Не нужно писать рекомендации, сфокусируйся на недочётах"
             ).format(report_part=report_part)
         }
     ]
     try:
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={"Authorization": f"Bearer {OpenRouter_API_KEY}", "Content-Type": "application/json"},
-            json={"model": "deepseek/deepseek-chat:free", "messages": messages},
-            timeout=30
-        )
-        if response.status_code == 200:
-            return response.json()["choices"][0]["message"]["content"]
-        else:
-            print(f"Ошибка при запросе к API: {response.status_code}, {response.text}")
-            return ""
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={"Authorization": f"Bearer {OpenRouter_API_KEY}", "Content-Type": "application/json"},
+                json={"model": "deepseek/deepseek-chat:free", "messages": messages},
+                timeout=aiohttp.ClientTimeout(total=90)
+            ) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    return result["choices"][0]["message"]["content"]
+                else:
+                    print(f"Ошибка при запросе к API: {response.status}, {response.text}")
+                    return ""
     except Exception as e:
         print(f"Ошибка при структурировании части отчёта: {e}")
         return ""
@@ -439,35 +502,47 @@ async def final_structure_report(structured_parts):
         }
     ]
     try:
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={"Authorization": f"Bearer {OpenRouter_API_KEY}", "Content-Type": "application/json"},
-            json={"model": "deepseek/deepseek-chat:free", "messages": messages},
-            timeout=30
-        )
-        if response.status_code == 200:
-            return response.json()["choices"][0]["message"]["content"]
-        else:
-            print(f"Ошибка при запросе к API: {response.status_code}, {response.text}")
-            return ""
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={"Authorization": f"Bearer {OpenRouter_API_KEY}", "Content-Type": "application/json"},
+                json={"model": "deepseek/deepseek-chat:free", "messages": messages},
+                timeout=aiohttp.ClientTimeout(total=90)
+            ) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    return result["choices"][0]["message"]["content"]
+                else:
+                    print(f"Ошибка при запросе к API: {response.status}, {response.text}")
+                    return ""
     except Exception as e:
         print(f"Ошибка при финальной структуризации отчёта: {e}")
         return ""
 
+async def async_write_file(filename: str, content: str):
+    async with aiofiles.open(filename, "w", encoding="utf-8") as f:
+        await f.write(content)
 
-async def main(analysis_type: str = "arch"):
-    # Загрузка текстов из PDF
+async def main(analysis_type: str = "hvac"):
     print('Загрузка текстов')
-    technical_text = extract_text_from_pdf("data/new_data/ТЗ.pdf")
+    technical_text, result_text = await asyncio.gather(
+        extract_text_from_pdf("data/new_data/ТЗ.pdf"),
+        extract_text_from_pdf("data/new_data/ИОС4.2 Отопление.pdf")
+    )
 
     mode_map = {
         "arch": ("arch", "Архитектурно-строительные решения"),
         "structural": ("structural", "Конструктивные решения"),
-        "engineer": ("engineer", "Инженерные системы")
+        "engineer": ("engineer", "Инженерные системы"),
+        "water_supply": ("water_supply", "Система водоснабжения"),
+        "water_drain": ("water_drain", "Система водоотведения"),
+        "heat_network": ("heat_network", "Тепловые сети и ИТП"),
+        "hvac": ("hvac", "Отопление, вентиляция и кондиционирование")
     }
 
     mode, section_name = mode_map.get(analysis_type, ("arch", "Архитектурно-строительные решения"))
 
+    print('Получение требований из ТЗ')
     ts_sections = await extract_sections_from_ts(technical_text, mode=mode)
 
 
@@ -475,67 +550,60 @@ async def main(analysis_type: str = "arch"):
     print("Первые 100 символов раздела:\n", technical_section_text[:100])
     print("Последние 100 символов раздела:\n", technical_section_text[-100:])
 
-    result_text = extract_text_from_pdf("data/new_data/АР.pdf")
+    technical_tokens, result_tokens = await asyncio.gather(
+        count_tokens(technical_section_text),
+        count_tokens(result_text)
+    )
 
-
-    technical_tokens = count_tokens(technical_section_text)
-    result_tokens = count_tokens(result_text)
     print(f"Токенов в техническом задании: {technical_tokens}")
     print(f"Токенов в результате: {result_tokens}")
-    # Разбиение текстов на части
 
 
     print('Разбиение текстов на части')
-    technical_chunks = split_text(technical_section_text)
-    result_chunks = split_text(result_text)
+    technical_chunks, result_chunks = await asyncio.gather(
+        split_text(technical_section_text),
+        split_text(result_text)
+    )
+    print(f"Количество чанков технического задания: {len(technical_chunks)}")
     print('Создание векторных хранилищ')
-    # Создание векторных хранилищ
-    technical_db = create_vector_db(technical_chunks)
+    technical_db = await create_vector_db(technical_chunks)
+
     print('Сбор всех результатов сравнения')
-    # Сбор всех результатов сравнения
     all_results = []
 
-    # Прогресс-бар для отслеживания выполнения
-    with tqdm(total=len(result_chunks), desc="Сравнение документов") as pbar:
-        tasks = [process_chunk(chunk, technical_db, mode) for chunk in result_chunks]
-        for task in asyncio.as_completed(tasks):  # Обработка чанков параллельно
-            results = await task
-            all_results.extend(results)
-            pbar.update(1)
-            await asyncio.sleep(1)
+    semaphore = asyncio.Semaphore(3)
 
-    # Формирование общего отчета\
+    async def process_chunk_with_semaphore(chunk):
+        async with semaphore:
+            return await process_chunk(chunk, technical_db, mode)
+
+    tasks = [process_chunk_with_semaphore(chunk) for chunk in result_chunks]
+    for task in tqdm_asyncio.as_completed(tasks, desc="Обработка документов"):
+        results = await task
+        all_results.extend(results)
+        await asyncio.sleep(0.1)
+
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    final_report = "\n\n".join(all_results)
-    print("\nИтоговый отчет по анализу и сравнению:\n")
-    print(final_report)
+    unstructured_filename = f"deepseek_results/unstructured_report_{current_time}.txt"
+    unstructured_report = "\n\n".join(all_results)
+    await async_write_file(unstructured_filename, unstructured_report)
 
-    # Сохранение отчета в файл (опционально)
-    with open(f"deepseek_results/final_report_deepseek_{current_time}.txt", "w", encoding="utf-8") as file:
-        file.write(final_report)
-    with open(f"deepseek_results/final_report_deepseek_{current_time}.txt", "r", encoding="utf-8") as file:
-        report = file.read()
+    print(f"Неструктурированный отчет сохранен в {unstructured_filename}")
 
-    report_parts = split_text_summarized(report)
+    report_parts = await split_text_summarized(unstructured_report)
     print(f"Отчёт разделён на {len(report_parts)} частей.")
 
-    structured_parts = []
-    for i, part in enumerate(report_parts):
-        print(f"Структурирование части {i + 1}...")
-        structured_part = await structure_report_part(part)
-        structured_parts.append(structured_part)
+    structured_parts = await asyncio.gather(
+        *(structure_report_part(part) for part in report_parts))
 
-    # Финальная структуризация объединённого отчёта
     print("Финальная структуризация отчёта...")
     final_report = await final_structure_report(structured_parts)
 
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
     output_filename = f"deepseek_results/final_structured_report_deepseek_{current_time}.txt"
-    with open(output_filename, "w", encoding="utf-8") as file:
-        file.write(final_report)
+    await async_write_file(output_filename, final_report)
     print(f"Отчёт сохранён в файл: {output_filename}")
 
 
-# Запуск асинхронного main
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
