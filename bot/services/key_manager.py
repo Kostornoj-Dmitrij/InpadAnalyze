@@ -11,7 +11,6 @@ class OpenRouterKeyManager:
         self.last_reset = datetime.now()
         self.failed_keys = set()
         self.lock = asyncio.Lock()
-        self.semaphore = asyncio.Semaphore(5)
 
     async def get_key(self):
         async with self.lock:

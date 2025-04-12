@@ -7,7 +7,6 @@ from bot.keyboards.builders import KeyboardBuilder
 from bot.services.file_processing import process_pdf_file, cleanup_temp_files
 from bot.services.analysis import analyze_documents
 from bot.handlers.start import cmd_start
-import os
 
 router = Router()
 

@@ -1,6 +1,5 @@
 import os
 from aiogram import Bot
-from typing import Optional
 import asyncio
 
 async def cleanup_temp_files(*paths):
