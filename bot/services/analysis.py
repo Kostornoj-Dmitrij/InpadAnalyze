@@ -10,8 +10,8 @@ from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings
 from nipype.pipeline.plugins.semaphore_singleton import semaphore
 from tqdm.asyncio import tqdm_asyncio
-
-from bot.config import OpenRouter_API_KEY, OPENAI_API_KEY
+from bot.services.key_manager import key_manager
+from bot.config import OpenRouter_API_KEYS, OPENAI_API_KEY
 
 
 async def extract_requirements(text: str, mode: str) -> str:
@@ -105,25 +105,39 @@ async def extract_requirements(text: str, mode: str) -> str:
                         "content": f"Извлеки инженерные требования (если они есть) из этого фрагмента:\n{chunk}"
                                     "Если в тексте есть отметки страниц: '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' ИЛИ '=== КОНЕЦ СТРАНИЦЫ {page_num} ===', и ты нашёл на этой странице какое-то требование, то НИ В КОЕМ СЛУЧАЕ НЕ УДАЛЯЙ МЕТКИ, мне нужно чтобы найденные тобой требования были абсолютно в том же виде окантованы этими метками! ВСЕ МЕТКИ СТРАНИЦ ДОЛЖНЫ БЫТЬ В ФОРМАТЕ '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' текст страницы... '=== КОНЕЦ СТРАНИЦЫ {page_num} ===')"                    }
                 ]
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
+            retries = 3
+            while retries > 0:
+                current_key = await key_manager.get_key()
+                if not current_key:
+                    print("Все ключи исчерпаны")
+                    return None
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(
                             "https://openrouter.ai/api/v1/chat/completions",
-                            headers={"Authorization": f"Bearer {OpenRouter_API_KEY}",
+                            headers={"Authorization": f"Bearer {current_key}",
                                      "Content-Type": "application/json"},
                             json={"model": "deepseek/deepseek-chat:free", "messages": messages},
                             timeout=aiohttp.ClientTimeout(total=300)
-                    ) as response:
-                        if response.status == 200:
-                            result = await response.json()
-                            if 'choices' in result and len(result['choices']) > 0:
-                                return result['choices'][0]['message']['content'].strip()
-            except Exception as e:
-                error_msg = f"Ошибка: {type(e).__name__}"
-                if str(e):
-                    error_msg += f" | Детали: {str(e)}"
-                print(f"Ошибка извлечения требований: {error_msg}")
-                return None
+                        ) as response:
+                            await key_manager.update_usage(current_key, response)
+
+                            if response.status == 200:
+                                result = await response.json()
+                                if 'choices' in result and len(result['choices']) > 0:
+                                    return result['choices'][0]['message']['content'].strip()
+                            elif response.status == 429:
+                                print(f"Ключ {current_key[-5:]}... исчерпан")
+                                await key_manager.handle_error(current_key)
+                                retries -= 1
+                                continue
+                            else:
+                                print(f"Ошибка {response.status} с ключом {current_key[-5:]}...")
+                                return None
+                except Exception as e:
+                    print(f"Ошибка с ключом {current_key[-5:]}...: {str(e)}")
+                    await key_manager.handle_error(current_key)
+                    retries -= 1
 
     tasks =[process_chunk(chunk) for chunk in chunks]
     for future in tqdm_asyncio.as_completed(tasks, desc="Извлечение требований"):
@@ -366,24 +380,38 @@ async def compare_documents(technical_spec, result_doc, mode: str = "arch"):
                                     f"{prompt['user']}"}
     ]
 
-    try:
-        print("Отправлен запрос")
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={"Authorization": f"Bearer {OpenRouter_API_KEY}", "Content-Type": "application/json"},
-                json={"model": "deepseek/deepseek-chat:free", "messages": messages},
-                timeout=aiohttp.ClientTimeout(total=300)
-            ) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    return result["choices"][0]["message"]["content"]
-                else:
-                    print(f"Ошибка при запросе к API: {response.status}, {response.text}")
-                    return ""
-    except Exception as e:
-        print(f"Ошибка при сравнении документов: {e}")
-        return ""
+    retries = 3
+    while retries > 0:
+        current_key = await key_manager.get_key()
+        if not current_key:
+            print("Все ключи исчерпаны")
+            return ""
+        try:
+            print("Отправлен запрос")
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {current_key}", "Content-Type": "application/json"},
+                    json={"model": "deepseek/deepseek-chat:free", "messages": messages},
+                    timeout=aiohttp.ClientTimeout(total=300)
+                ) as response:
+                    await key_manager.update_usage(current_key, response)
+                    if response.status == 200:
+                        result = await response.json()
+                        return result["choices"][0]["message"]["content"]
+                    elif response.status == 429:
+                        print(f"Ключ {current_key[-5:]}... исчерпан")
+                        await key_manager.handle_error(current_key)
+                        retries -= 1
+                        continue
+                    else:
+                        print(f"Ошибка {response.status} с ключом {current_key[-5:]}...")
+                        return ""
+        except Exception as e:
+            print(f"Ошибка с ключом {current_key[-5:]}...: {str(e)}")
+            await key_manager.handle_error(current_key)
+            retries -= 1
+    return ""
 
 
 async def process_chunk(result_chunk, technical_db, mode: str = "arch"):
@@ -461,25 +489,38 @@ async def structure_report_part(report_part):
             ).format(report_part=report_part)
         }
     ]
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={"Authorization": f"Bearer {OpenRouter_API_KEY}", "Content-Type": "application/json"},
-                json={"model": "deepseek/deepseek-chat:free", "messages": messages},
-                timeout=aiohttp.ClientTimeout(total=300)
-            ) as response:
-                raw_response = await response.text()
-                print(f"Raw API response: {raw_response[:50]}...")
-                if response.status == 200:
-                    result = await response.json()
-                    return result["choices"][0]["message"]["content"]
-                else:
-                    print(f"Ошибка при запросе к API: {response.status}, {response.text}")
-                    return ""
-    except Exception as e:
-        print(f"Ошибка при структурировании части отчёта: {e}")
-        return ""
+    retries = 3
+    while retries > 0:
+        current_key = await key_manager.get_key()
+        if not current_key:
+            print("Все ключи исчерпаны")
+            return ""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {current_key}", "Content-Type": "application/json"},
+                    json={"model": "deepseek/deepseek-chat:free", "messages": messages},
+                    timeout=aiohttp.ClientTimeout(total=300)
+                ) as response:
+                    await key_manager.update_usage(current_key, response)
+
+                    if response.status == 200:
+                        result = await response.json()
+                        return result["choices"][0]["message"]["content"]
+                    elif response.status == 429:
+                        print(f"Ключ {current_key[-5:]}... исчерпан")
+                        await key_manager.handle_error(current_key)
+                        retries -= 1
+                        continue
+                    else:
+                        print(f"Ошибка {response.status} с ключом {current_key[-5:]}...")
+                        return ""
+        except Exception as e:
+            print(f"Ошибка с ключом {current_key[-5:]}...: {str(e)}")
+            await key_manager.handle_error(current_key)
+            retries -= 1
+    return ""
 
 
 async def final_structure_report(structured_parts):
@@ -511,23 +552,39 @@ async def final_structure_report(structured_parts):
             ).format(combined_report=combined_report)
         }
     ]
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={"Authorization": f"Bearer {OpenRouter_API_KEY}", "Content-Type": "application/json"},
-                json={"model": "deepseek/deepseek-chat:free", "messages": messages},
-                timeout=aiohttp.ClientTimeout(total=300)
-            ) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    return result["choices"][0]["message"]["content"]
-                else:
-                    print(f"Ошибка при запросе к API: {response.status}, {response.text}")
-                    return ""
-    except Exception as e:
-        print(f"Ошибка при финальной структуризации отчёта: {e}")
-        return ""
+
+    retries = 3
+    while retries > 0:
+        current_key = await key_manager.get_key()
+        if not current_key:
+            print("Все ключи исчерпаны")
+            return ""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {current_key}", "Content-Type": "application/json"},
+                    json={"model": "deepseek/deepseek-chat:free", "messages": messages},
+                    timeout=aiohttp.ClientTimeout(total=300)
+                ) as response:
+                    await key_manager.update_usage(current_key, response)
+
+                    if response.status == 200:
+                        result = await response.json()
+                        return result["choices"][0]["message"]["content"]
+                    elif response.status == 429:
+                        print(f"Ключ {current_key[-5:]}... исчерпан")
+                        await key_manager.handle_error(current_key)
+                        retries -= 1
+                        continue
+                    else:
+                        print(f"Ошибка {response.status} с ключом {current_key[-5:]}...")
+                        return ""
+        except Exception as e:
+            print(f"Ошибка с ключом {current_key[-5:]}...: {str(e)}")
+            await key_manager.handle_error(current_key)
+            retries -= 1
+    return ""
 
 async def async_write_file(filename: str, content: str):
     async with aiofiles.open(filename, "w", encoding="utf-8") as f:
@@ -640,24 +697,44 @@ async def generate_answer(file_path: str, question: str) -> str:
                 "content": f"Контекст:\n{'\n\n'.join(context)}\n\nВопрос: {question}. ОБЯЗАТЕЛЬНО УКАЖИ СТРАНИЦУ НА КОТОРОЙ НАШЁЛ ОТВЕТ."
             }
         ]
+        retries = 3
+        while retries > 0:
+            current_key = await key_manager.get_key()
+            if not current_key:
+                print("Все ключи исчерпаны")
+                return "Произошла ошибка: все ключи API исчерпаны"
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={"Authorization": f"Bearer {OpenRouter_API_KEY}"},
-                json={
-                    "model": "deepseek/deepseek-chat:free",
-                    "messages": messages,
-                    "temperature": 0.3,
-                    "max_tokens": 2000
-                }
-            ) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    print(f"API Error {response.status}: {error_text[:200]}")
-                result = await response.json()
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        "https://openrouter.ai/api/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {current_key}"},
+                        json={
+                            "model": "deepseek/deepseek-chat:free",
+                            "messages": messages,
+                            "temperature": 0.3,
+                            "max_tokens": 2000
+                        }
+                    ) as response:
+                        await key_manager.update_usage(current_key, response)
 
-        return result['choices'][0]['message']['content']
+                        if response.status == 200:
+                            result = await response.json()
+                            return result['choices'][0]['message']['content']
+                        elif response.status == 429:
+                            print(f"Ключ {current_key[-5:]}... исчерпан")
+                            await key_manager.handle_error(current_key)
+                            retries -= 1
+                            continue
+                        else:
+                            error_text = await response.text()
+                            print(f"API Error {response.status}: {error_text[:200]}")
+                            return "Произошла ошибка при обработке запроса"
+            except Exception as e:
+                print(f"Ошибка с ключом {current_key[-5:]}...: {str(e)}")
+                await key_manager.handle_error(current_key)
+                retries -= 1
+        return "Произошла внутренная ошибка"
     except Exception as e:
         print(f"Unexpected error: {str(e)}")
         return "Произошла внутренняя ошибка"
