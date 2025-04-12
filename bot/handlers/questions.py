@@ -6,6 +6,7 @@ from bot.models.states import QuestionStates
 from bot.services.file_processing import process_pdf_file
 from bot.services.analysis import generate_answer
 import os
+from bot.services.utils import send_long_message
 
 router = Router()
 
@@ -30,10 +31,17 @@ async def handle_question_file(message: types.Message, state: FSMContext):
 @router.message(QuestionStates.waiting_question)
 async def handle_question(message: types.Message, state: FSMContext):
     user_data = await state.get_data()
-    answer = await generate_answer(user_data['file_path'], message.text)
 
-    await message.answer(answer)
-    if os.path.exists(user_data['file_path']):
-        os.remove(user_data['file_path'])
-    await state.clear()
+    try:
+        answer = await generate_answer(user_data['file_path'], message.text)
+        await send_long_message(message.bot, message.chat.id, answer)
+
+    except Exception as e:
+        error_msg = f"Ошибка: {str(e)[:300]}"
+        await message.answer(error_msg)
+
+    finally:
+        if 'file_path' in user_data and os.path.exists(user_data['file_path']):
+            os.remove(user_data['file_path'])
+        await state.clear()
     await cmd_start(message, state)

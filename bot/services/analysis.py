@@ -606,56 +606,58 @@ async def analyze_documents(category: str, tz_path: str, result_path: str, user_
 
 
 async def generate_answer(file_path: str, question: str) -> str:
-    # Извлекаем и подготавливаем текст
-    raw_text = await extract_text_from_pdf(file_path)
-    chunks = await split_text(raw_text, max_tokens=8000, overlap=500)
+    try:
 
-    # Создаем векторную базу
-    vector_db = await create_vector_db(chunks)
+        raw_text = await extract_text_from_pdf(file_path)
+        chunks = await split_text(raw_text, max_tokens=8000, overlap=500)
 
-    # Ищем релевантные разделы
-    relevant_docs = await find_similar_sections(question, vector_db, k=3)
+        vector_db = await create_vector_db(chunks)
 
-    # Формируем контекст с учетом лимита токенов
-    tokenizer = tiktoken.get_encoding("cl100k_base")
-    context = []
-    total_tokens = len(tokenizer.encode(question)) + 500
+        relevant_docs = await find_similar_sections(question, vector_db, k=3)
 
-    for doc in relevant_docs:
-        doc_content = doc.page_content
-        doc_tokens = len(tokenizer.encode(doc_content))
+        tokenizer = tiktoken.get_encoding("cl100k_base")
+        context = []
+        total_tokens = len(tokenizer.encode(question)) + 500
 
-        if total_tokens + doc_tokens > 26000:
-            break
+        for doc in relevant_docs:
+            doc_content = doc.page_content
+            doc_tokens = len(tokenizer.encode(doc_content))
 
-        context.append(doc_content)
-        total_tokens += doc_tokens
+            if total_tokens + doc_tokens > 26000:
+                break
 
-    messages = [
-        {
-            "role": "system",
-            "content": "Ты эксперт по анализу документов. Ответь на вопрос используя ТОЛЬКО предоставленные фрагменты документа. "
-                       "Если ответа нет в документах, скажи об этом. Указывай номера страниц в формате [Страница X]."
-        },
-        {
-            "role": "user",
-            "content": f"Контекст:\n{'\n\n'.join(context)}\n\nВопрос: {question}"
-        }
-    ]
+            context.append(doc_content)
+            total_tokens += doc_tokens
 
-    # Отправляем запрос
-    async with aiohttp.ClientSession() as session:
-        response = await session.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={"Authorization": f"Bearer {OpenRouter_API_KEY}"},
-            json={
-                "model": "deepseek/deepseek-chat:free",
-                "messages": messages,
-                "temperature": 0.3,
-                "max_tokens": 2000
+        messages = [
+            {
+                "role": "system",
+                "content": "Ты эксперт по анализу документов. Ответь на вопрос используя ТОЛЬКО предоставленные фрагменты документа. "
+                           "Если ответа нет в документах, скажи об этом. Указывай номера страниц в формате [Страница X]."
+            },
+            {
+                "role": "user",
+                "content": f"Контекст:\n{'\n\n'.join(context)}\n\nВопрос: {question}. ОБЯЗАТЕЛЬНО УКАЖИ СТРАНИЦУ НА КОТОРОЙ НАШЁЛ ОТВЕТ."
             }
-        )
-        result = await response.json()
+        ]
 
-    return result['choices'][0]['message']['content']
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={"Authorization": f"Bearer {OpenRouter_API_KEY}"},
+                json={
+                    "model": "deepseek/deepseek-chat:free",
+                    "messages": messages,
+                    "temperature": 0.3,
+                    "max_tokens": 2000
+                }
+            ) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    print(f"API Error {response.status}: {error_text[:200]}")
+                result = await response.json()
 
+        return result['choices'][0]['message']['content']
+    except Exception as e:
+        print(f"Unexpected error: {str(e)}")
+        return "Произошла внутренняя ошибка"
