@@ -1,5 +1,7 @@
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
 from handlers import start, comparison, questions, common
 from config import TOKEN
 import logging
@@ -14,8 +16,13 @@ logging.basicConfig(
 )
 
 async def main():
+    session = AiohttpSession(
+        api=TelegramAPIServer.from_base("http://localhost:8081", is_local=True),
+        timeout=60 * 30
+    )
+
     storage = MemoryStorage()
-    bot = Bot(token=TOKEN)
+    bot = Bot(token=TOKEN, session=session)
     dp = Dispatcher(storage=storage)
 
     dp.include_routers(

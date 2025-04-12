@@ -523,7 +523,7 @@ async def async_write_file(filename: str, content: str):
     async with aiofiles.open(filename, "w", encoding="utf-8") as f:
         await f.write(content)
 
-async def main(analysis_type: str = "hvac"):
+async def main(analysis_type: str = "engineer"):
     print('Загрузка текстов')
     technical_text, result_text = await asyncio.gather(
         extract_text_from_pdf("data/new_data/ТЗ.pdf"),

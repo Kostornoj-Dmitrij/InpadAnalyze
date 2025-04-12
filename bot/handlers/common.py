@@ -8,6 +8,6 @@ router = Router()
 async def back_to_start(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.edit_text(
-        "Главное меню:",
+        "     Главное меню:",
         reply_markup=KeyboardBuilder.start_kb()
     )
