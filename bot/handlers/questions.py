@@ -7,6 +7,7 @@ from bot.services.file_processing import process_pdf_file
 from bot.services.analysis import generate_answer
 import os
 from bot.services.utils import send_long_message
+import asyncio
 
 router = Router()
 
@@ -24,6 +25,9 @@ async def start_question_flow(callback: types.CallbackQuery, state: FSMContext):
 async def handle_question_file(message: types.Message, state: FSMContext):
     file_path = await process_pdf_file(message, message.bot)
     await state.update_data(file_path=file_path)
+
+    await asyncio.sleep(5)
+
     await message.answer("Файл получен. Теперь задайте ваш вопрос:")
     await state.set_state(QuestionStates.waiting_question)
 

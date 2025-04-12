@@ -16,13 +16,15 @@ logging.basicConfig(
 )
 
 async def main():
+    '''
     session = AiohttpSession(
         api=TelegramAPIServer.from_base("http://localhost:8081", is_local=True),
         timeout=60 * 30
     )
+    '''
 
     storage = MemoryStorage()
-    bot = Bot(token=TOKEN, session=session)
+    bot = Bot(token=TOKEN)
     dp = Dispatcher(storage=storage)
 
     dp.include_routers(

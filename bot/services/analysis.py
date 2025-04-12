@@ -678,10 +678,13 @@ async def analyze_documents(category: str, tz_path: str, result_path: str, user_
 
 async def generate_answer(file_path: str, question: str) -> str:
     try:
-
         raw_text = await extract_text_from_pdf(file_path)
+        print("Извлечённый текст")
+        print(len(raw_text))
         chunks = await split_text(raw_text, max_tokens=8000, overlap=500)
-
+        print(len(chunks))
+        print("Первые символы чанка")
+        print(chunks[:100])
         vector_db = await create_vector_db(chunks)
 
         relevant_docs = await find_similar_sections(question, vector_db, k=3)
@@ -699,7 +702,8 @@ async def generate_answer(file_path: str, question: str) -> str:
 
             context.append(doc_content)
             total_tokens += doc_tokens
-
+        print("Первые символы контекста")
+        print(context[:100])
         messages = [
             {
                 "role": "system",
