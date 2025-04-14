@@ -35,6 +35,8 @@ async def handle_question_file(message: types.Message, state: FSMContext):
 @router.message(QuestionStates.waiting_question)
 async def handle_question(message: types.Message, state: FSMContext):
     user_data = await state.get_data()
+    await message.answer("Ищу ответ, ожидайте пожалуйста.")
+
 
     try:
         answer = await generate_answer(user_data['file_path'], message.text)

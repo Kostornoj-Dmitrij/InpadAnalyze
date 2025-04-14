@@ -4,7 +4,7 @@ from datetime import datetime
 
 import requests
 from PyPDF2 import PdfReader
-from bot_scripts.config import OpenRouter_API_KEY, OPENAI_API_KEY
+from bot.config import OpenRouter_API_KEY, OPENAI_API_KEY
 from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings
 from tqdm import tqdm

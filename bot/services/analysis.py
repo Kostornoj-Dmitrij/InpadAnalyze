@@ -702,8 +702,6 @@ async def generate_answer(file_path: str, question: str) -> str:
 
             context.append(doc_content)
             total_tokens += doc_tokens
-        print("Первые символы контекста")
-        print(context[:100])
         messages = [
             {
                 "role": "system",
