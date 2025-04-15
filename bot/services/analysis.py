@@ -224,7 +224,23 @@ async def extract_sections_from_ts(text: str, mode: str = "default") -> dict:
             arch_text = await extract_requirements(text, mode)
             if arch_text:
                 sections["Архитектурно-строительные решения"] = arch_text
-        elif mode == "engineer":
+        elif mode == "water_supply":
+            water_supply_text = await extract_requirements(text, mode)
+            if water_supply_text:
+                sections["Водоснабжение и канализация"] = water_supply_text
+        elif mode == "water_drain":
+            water_drain_text = await extract_requirements(text, mode)
+            if water_drain_text:
+                sections["Водоснабжение и канализация"] = water_drain_text
+        elif mode == "heat_network":
+            heat_network_text = await extract_requirements(text, mode)
+            if heat_network_text:
+                sections["Отопление, вентиляция и кондиционирование"] = heat_network_text
+        elif mode == "hvac":
+            hvac_text = await extract_requirements(text, mode)
+            if hvac_text:
+                sections["Отопление, вентиляция и кондиционирование"] = hvac_text
+        else:
             engineer_text = await extract_requirements(text, mode)
             if engineer_text:
                 sections["Инженерные системы"] = engineer_text
