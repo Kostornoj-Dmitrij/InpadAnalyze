@@ -2,12 +2,12 @@ from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import FSInputFile
 
-from models.states import ComparisonStates
-from keyboards.builders import KeyboardBuilder
-from services.file_processing import process_pdf_file, cleanup_temp_files
-from services.analysis import analyze_documents
-from handlers.start import cmd_start
-from services.file_processing import convert_to_pdf, convert_to_xls
+from bot.models.states import ComparisonStates
+from bot.keyboards.builders import KeyboardBuilder
+from bot.services.file_processing import process_pdf_file, cleanup_temp_files
+from bot.services.analysis import analyze_documents
+from bot.handlers.start import cmd_start
+from bot.services.file_processing import convert_to_pdf, convert_to_xls
 from aiogram import Bot
 
 router = Router()
