@@ -79,3 +79,14 @@ class KeyboardBuilder:
         )
         builder.adjust(1)
         return builder.as_markup()
+
+    @staticmethod
+    def format_choice_kb():
+        builder = InlineKeyboardBuilder()
+        builder.add(
+            InlineKeyboardButton(text='📄 TXT', callback_data='format_txt'),
+            InlineKeyboardButton(text='📝 PDF', callback_data='format_pdf'),
+            InlineKeyboardButton(text='📊 Excel', callback_data='format_xls'),
+        )
+        builder.adjust(3)
+        return builder.as_markup()

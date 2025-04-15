@@ -7,6 +7,7 @@ from bot.keyboards.builders import KeyboardBuilder
 from bot.services.file_processing import process_pdf_file, cleanup_temp_files
 from bot.services.analysis import analyze_documents
 from bot.handlers.start import cmd_start
+from bot.services.file_processing import convert_to_pdf, convert_to_xls
 
 router = Router()
 
@@ -37,6 +38,47 @@ async def handle_category_selection(callback: types.CallbackQuery, state: FSMCon
     await state.set_state(ComparisonStates.waiting_tz_file)
 
 
+@router.callback_query(ComparisonStates.waiting_format_choice, F.data.startswith('format_'))
+async def handle_format_choice(callback: types.CallbackQuery, state: FSMContext):
+    report_path = pdf_path = xls_path = None
+    user_data = await state.get_data()
+    report_path = user_data.get('report_path')
+    format_type = callback.data.split('_')[1]
+
+    try:
+        if format_type == 'txt':
+            await callback.message.answer_document(
+                FSInputFile(report_path),
+                caption="Отчет в формате TXT"
+            )
+        elif format_type == 'pdf':
+            pdf_path = await convert_to_pdf(report_path)
+            await callback.message.answer_document(
+                FSInputFile(pdf_path),
+                caption="Отчет в формате PDF"
+            )
+        elif format_type == 'xls':
+            xls_path = await convert_to_xls(report_path)
+            await callback.message.answer_document(
+                FSInputFile(xls_path),
+                caption="Отчет в формате Excel"
+            )
+
+    except Exception as e:
+        await callback.message.answer(f"Ошибка при подготовке отчета: {str(e)}")
+    finally:
+        files_to_clean = [
+            user_data.get('tz_file'),
+            user_data.get('result_path'),
+            report_path,
+            pdf_path,
+            xls_path
+        ]
+        await cleanup_temp_files([f for f in files_to_clean if f is not None])
+        await state.clear()
+
+
+
 @router.message(
     ComparisonStates.waiting_tz_file,
     F.document & (F.document.mime_type == 'application/pdf')
@@ -50,6 +92,8 @@ async def handle_tz_file(message: types.Message, state: FSMContext):
 
 @router.message(ComparisonStates.waiting_result_file)
 async def handle_result_file(message: types.Message, state: FSMContext):
+    result_path = None
+    report_path = None
     user_data = await state.get_data()
 
     result_path = await process_pdf_file(message, message.bot)
@@ -67,19 +111,25 @@ async def handle_result_file(message: types.Message, state: FSMContext):
             user_id=message.from_user.id
         )
 
-        await message.answer_document(
-            FSInputFile(report_path),
-            caption="Отчет готов"
+        await state.update_data(report_path=report_path)
+        await state.set_state(ComparisonStates.waiting_format_choice)
+
+        await message.answer(
+            "Отчёт готов, выберите формат:",
+            reply_markup=KeyboardBuilder.format_choice_kb()
         )
+
+
     except Exception as e:
         await message.answer(f"Произошла ошибка: {str(e)}")
-        await cmd_start(message, state)
-    finally:
+
         files_to_clean = [
             user_data.get('tz_file'),
             result_path,
-            report_path if 'report_path' in locals() else None
+            report_path
         ]
+
         await cleanup_temp_files([f for f in files_to_clean if f is not None])
+
         await state.clear()
         await cmd_start(message, state)
