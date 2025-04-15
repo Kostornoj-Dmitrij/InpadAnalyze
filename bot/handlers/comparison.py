@@ -2,12 +2,13 @@ from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import FSInputFile
 
-from bot.models.states import ComparisonStates
-from bot.keyboards.builders import KeyboardBuilder
-from bot.services.file_processing import process_pdf_file, cleanup_temp_files
-from bot.services.analysis import analyze_documents
-from bot.handlers.start import cmd_start
-from bot.services.file_processing import convert_to_pdf, convert_to_xls
+from models.states import ComparisonStates
+from keyboards.builders import KeyboardBuilder
+from services.file_processing import process_pdf_file, cleanup_temp_files
+from services.analysis import analyze_documents
+from handlers.start import cmd_start
+from services.file_processing import convert_to_pdf, convert_to_xls
+from aiogram import Bot
 
 router = Router()
 
@@ -33,13 +34,21 @@ async def choose_category(callback: types.CallbackQuery, state: FSMContext):
     F.data.in_(['arch_category', 'constr_category', 'eng_category', 'water_supply_category', 'water_drain_category', 'heat_network_category', 'hvac_category'])
 )
 async def handle_category_selection(callback: types.CallbackQuery, state: FSMContext):
+    try:
+        await callback.message.delete()
+    except:
+        pass
     await state.update_data(category=callback.data)
-    await callback.message.answer("Пожалуйста, загрузите файл с ТЗ:")
     await state.set_state(ComparisonStates.waiting_tz_file)
+    await callback.message.answer("Пожалуйста, загрузите файл с ТЗ:")
 
 
 @router.callback_query(ComparisonStates.waiting_format_choice, F.data.startswith('format_'))
 async def handle_format_choice(callback: types.CallbackQuery, state: FSMContext):
+    try:
+        await callback.message.delete()
+    except:
+        pass
     report_path = pdf_path = xls_path = None
     user_data = await state.get_data()
     report_path = user_data.get('report_path')
@@ -76,6 +85,7 @@ async def handle_format_choice(callback: types.CallbackQuery, state: FSMContext)
         ]
         await cleanup_temp_files([f for f in files_to_clean if f is not None])
         await state.clear()
+        await cmd_start(callback.message, state)
 
 
 
@@ -84,6 +94,7 @@ async def handle_format_choice(callback: types.CallbackQuery, state: FSMContext)
     F.document & (F.document.mime_type == 'application/pdf')
 )
 async def handle_tz_file(message: types.Message, state: FSMContext):
+    user_data = await state.get_data()
     file_path = await process_pdf_file(message, message.bot)
     await state.update_data(tz_file=file_path)
     await message.answer("Файл ТЗ успешно загружен. Теперь загрузите файл с результатом:")
