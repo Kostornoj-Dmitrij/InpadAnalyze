@@ -6,6 +6,13 @@ from handlers import start, comparison, questions, common
 from config import TOKEN
 import logging
 
+"""
+Для хостинга
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent))
+"""
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
