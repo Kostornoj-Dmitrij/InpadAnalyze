@@ -40,7 +40,7 @@ async def cleanup_temp_files(file_paths: list):
                 print(f"Ошибка удаления файла {path}: {str(e)}")
 
 
-def convert_to_pdf(txt_path: str) -> str:
+async def convert_to_pdf(txt_path: str) -> str:
     pdf_path = txt_path.replace('.txt', '.pdf')
 
     styles = getSampleStyleSheet()

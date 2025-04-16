@@ -1,5 +1,6 @@
 from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
+from bot.keyboards.builders import KeyboardBuilder
 
 from bot.handlers.start import cmd_start
 from bot.models.states import QuestionStates
@@ -19,7 +20,8 @@ async def start_question_flow(callback: types.CallbackQuery, state: FSMContext):
         await callback.message.delete()
     except:
         pass
-    await callback.message.answer("Пожалуйста, загрузите PDF-файл для анализа:")
+    await callback.message.answer("Пожалуйста, загрузите PDF-файл для анализа:",
+                                  reply_markup=KeyboardBuilder.back_button_kb())
     await state.set_state(QuestionStates.waiting_file)
 
 

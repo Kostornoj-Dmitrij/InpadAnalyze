@@ -164,6 +164,7 @@ async def extract_sections_from_ts(text: str, mode: str = "default") -> dict:
         "Инженерные решения",
         "Раздел «Отопление, вентиляция и кондиционирование»",
         "Раздел «Водоснабжение и канализация»",
+        "Раздел «Системы электроснабжения»"
         "Раздел «Слаботочные системы»",
         "Схема планировочной организации земельного участка",
     ]
@@ -270,7 +271,8 @@ def _sync_extract_text_from_pdf(pdf_path: str) -> str:
     text = []
     for page_num, page in enumerate(reader.pages, start=1):
         content = page.extract_text() or ""
-        text.append(f"\n=== НАЧАЛО СТРАНИЦЫ {page_num} ===\n{content}\n=== КОНЕЦ СТРАНИЦЫ {page_num} ===")
+        if page_num <= len(reader.pages):
+            text.append(f"\n=== НАЧАЛО СТРАНИЦЫ {page_num} ===\n{content}\n=== КОНЕЦ СТРАНИЦЫ {page_num} ===")
     return "\n".join(text)
 
 
@@ -298,7 +300,7 @@ def _sync_split_text(text: str, max_tokens: int, overlap: int) -> list[str]:
 
         elif current_page is not None and not line.startswith('=== КОНЕЦ СТРАНИЦЫ'):
             current_page['text'] += line + '\n'
-    if (current_page is not None):
+    if current_page is not None:
         pages.append(current_page)
 
     chunks = []
@@ -353,7 +355,9 @@ def _sync_create_vector_db(text_chunks):
 
     try:
         embeddings = OpenAIEmbeddings(api_key=OPENAI_API_KEY)
-        return FAISS.from_texts(valid_chunks, embeddings)
+        return FAISS.from_texts(
+            sorted(valid_chunks, key=lambda x: hash(x)),
+            embeddings)
     except Exception as e:
         print(f"Ошибка создания векторной базы: {e}")
         raise
@@ -395,7 +399,11 @@ async def compare_documents(technical_spec, result_doc, mode: str = "arch"):
         {"role": "user", "content": f"Вот часть технического задания:\n{technical_spec}\n\n"
                                     f"Вот соответствующий результат работы:\n{result_doc}\n\n"
                                     "Найди несоответствия и укажи, что выполнено правильно, а что — нет. "
-                                    "Обязательно указывай номера страниц, на которых найдены проблемы (И ИЗ ТЗ И ИЗ РЕЗУЛЬТАТА РАБОТЫ)"
+                                    "Обязательно указывай номера страниц, на которых найдены проблемы (И ИЗ ТЗ И ИЗ РЕЗУЛЬТАТА РАБОТЫ), ТОЛЬКО ОБЯЗАТЕЛЬНО УБЕДИСЬ ЧТО НЕ ПЕРЕПУТАЕШЬ ИХ, ЧТОБЫ НЕ БЫЛО ТАКОГО, ЧТО ТЫ УКАЗАЛ СТРАНИЦУ ТЗ = 61 ХОТЯ ИХ В ТЗ МЕНЬШЕ"
+                                    "При анализе учитывай, что использование аналогов материалов и оборудования, "
+                                    "указанных в техническом задании, является допустимым. "
+                                    "Не считай расхождением случаи, когда в результате работ указан "
+                                    "равнозначный аналог требуемого материала или оборудования. "
                                     f"{prompt['user']}"}
     ]
 
@@ -412,7 +420,7 @@ async def compare_documents(technical_spec, result_doc, mode: str = "arch"):
                 async with session.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     headers={"Authorization": f"Bearer {current_key}", "Content-Type": "application/json"},
-                    json={"model": "deepseek/deepseek-chat:free", "messages": messages},
+                    json={"model": "deepseek/deepseek-chat:free", "messages": messages, "temperature": 0},
                     timeout=aiohttp.ClientTimeout(total=150)
                 ) as response:
                     await key_manager.update_usage(current_key, response)
@@ -532,7 +540,7 @@ async def structure_report_part(report_part):
                 async with session.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     headers={"Authorization": f"Bearer {current_key}", "Content-Type": "application/json"},
-                    json={"model": "deepseek/deepseek-chat:free", "messages": messages},
+                    json={"model": "deepseek/deepseek-chat:free", "messages": messages, "temperature": 0},
                     timeout=aiohttp.ClientTimeout(total=150)
                 ) as response:
                     await key_manager.update_usage(current_key, response)
@@ -607,7 +615,7 @@ async def final_structure_report(structured_parts):
                 async with session.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     headers={"Authorization": f"Bearer {current_key}", "Content-Type": "application/json"},
-                    json={"model": "deepseek/deepseek-chat:free", "messages": messages},
+                    json={"model": "deepseek/deepseek-chat:free", "messages": messages, "temperature": 0},
                     timeout=aiohttp.ClientTimeout(total=150)
                 ) as response:
                     await key_manager.update_usage(current_key, response)
@@ -648,9 +656,9 @@ async def analyze_documents(category: str, tz_path: str, result_path: str, user_
         'arch_category': ('arch', 'Архитектурно-строительные решения'),
         'constr_category': ('structural', 'Конструктивные решения'),
         'eng_category': ('engineer', 'Инженерные системы'),
-        "water_supply_category": ("water_supply", "Система водоснабжения"),
-        "water_drain_category": ("water_drain", "Система водоотведения"),
-        "heat_network_category": ("heat_network", "Тепловые сети и ИТП"),
+        "water_supply_category": ("water_supply", "Водоснабжение и канализация"),
+        "water_drain_category": ("water_drain", "Водоснабжение и канализация"),
+        "heat_network_category": ("heat_network", "Отопление, вентиляция и кондиционирование"),
         "hvac_category": ("hvac", "Отопление, вентиляция и кондиционирование")
     }
     mode, section_name = mode_map.get(category, ('arch', 'Архитектурно-строительные решения'))

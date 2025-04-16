@@ -2,13 +2,12 @@ from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import FSInputFile
 
-from bot.models.states import ComparisonStates
-from bot.keyboards.builders import KeyboardBuilder
-from bot.services.file_processing import process_pdf_file, cleanup_temp_files
-from bot.services.analysis import analyze_documents
 from bot.handlers.start import cmd_start
+from bot.keyboards.builders import KeyboardBuilder
+from bot.models.states import ComparisonStates
+from bot.services.analysis import analyze_documents
 from bot.services.file_processing import convert_to_pdf, convert_to_xls
-from aiogram import Bot
+from bot.services.file_processing import process_pdf_file, cleanup_temp_files
 
 router = Router()
 
@@ -58,8 +57,13 @@ async def handle_category_selection(callback: types.CallbackQuery, state: FSMCon
 @router.callback_query(F.data == 'back_to_categories')
 async def back_to_categories(callback: types.CallbackQuery, state: FSMContext):
     user_data = await state.get_data()
-    if user_data.get('tz_file'):
-        await cleanup_temp_files([user_data['tz_file']])
+    files_to_clean = [
+        user_data.get('tz_file'),
+        user_data.get('result_path'),
+        user_data.get('report_path')
+    ]
+
+    await cleanup_temp_files([f for f in files_to_clean if f is not None])
 
     await state.set_state(ComparisonStates.choosing_category)
     await callback.message.edit_text(
@@ -124,7 +128,8 @@ async def handle_tz_file(message: types.Message, state: FSMContext):
 
     category_name = user_data.get('category_name', 'выбранного раздела')
 
-    await message.answer(f"Файл ТЗ успешно загружен. Теперь загрузите файл с результатом ({category_name}):")
+    await message.answer(f"Файл ТЗ успешно загружен. Теперь загрузите файл с результатом ({category_name}):",
+                         reply_markup=KeyboardBuilder.back_to_categories_kb())
     await state.set_state(ComparisonStates.waiting_result_file)
 
 
