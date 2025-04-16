@@ -4,6 +4,7 @@ import re
 import pandas as pd
 from aiogram import Bot
 from aiogram.types import Message
+from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
@@ -13,6 +14,9 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate
 project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 font_path = os.path.join(project_dir, 'fonts/DejaVuSans.ttf')
 pdfmetrics.registerFont(TTFont('DejaVuSans', font_path))
+font_bold_path = os.path.join(project_dir, 'fonts/DejaVuSans-Bold.ttf')
+pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', font_bold_path))
+
 
 async def process_pdf_file(message: Message, bot: Bot) -> str:
     if not os.path.exists("temp"):
@@ -36,10 +40,11 @@ async def cleanup_temp_files(file_paths: list):
                 print(f"Ошибка удаления файла {path}: {str(e)}")
 
 
-async def convert_to_pdf(txt_path: str) -> str:
+def convert_to_pdf(txt_path: str) -> str:
     pdf_path = txt_path.replace('.txt', '.pdf')
 
     styles = getSampleStyleSheet()
+
     styles.add(ParagraphStyle(
         name='Normal_RU',
         fontName='DejaVuSans',
@@ -47,12 +52,37 @@ async def convert_to_pdf(txt_path: str) -> str:
         leading=14,
         parent=styles['Normal']
     ))
+
+    styles.add(ParagraphStyle(
+        name='Heading1_RU',
+        fontName='DejaVuSans-Bold',
+        fontSize=16,
+        leading=18,
+        textColor=HexColor('#2E74B5'),
+        spaceAfter=12,
+        parent=styles['Heading1']
+    ))
+
     styles.add(ParagraphStyle(
         name='Heading2_RU',
-        fontName='DejaVuSans',
+        fontName='DejaVuSans-Bold',
         fontSize=14,
         leading=16,
+        textColor=HexColor('#548235'),
+        spaceAfter=8,
         parent=styles['Heading2']
+    ))
+
+    styles.add(ParagraphStyle(
+        name='ListItem_RU',
+        fontName='DejaVuSans',
+        fontSize=12,
+        leading=14,
+        leftIndent=10,
+        bulletIndent=0,
+        spaceBefore=4,
+        spaceAfter=4,
+        parent=styles['Normal']
     ))
 
     story = []
@@ -62,11 +92,18 @@ async def convert_to_pdf(txt_path: str) -> str:
             if not line:
                 continue
 
-            if line.startswith('##'):
-                p = Paragraph(line.replace('#', ''), styles['Heading2_RU'])
+            if line.startswith('### '):
+                p = Paragraph(line.replace('#', '').strip(), styles['Heading1_RU'])
+                story.append(p)
+            elif line.startswith('#### '):
+                p = Paragraph(line.replace('#', '').strip(), styles['Heading2_RU'])
+                story.append(p)
+            elif line.startswith('-'):
+                p = Paragraph(f"• {line[1:].strip()}", styles['ListItem_RU'])
+                story.append(p)
             else:
                 p = Paragraph(line, styles['Normal_RU'])
-            story.append(p)
+                story.append(p)
 
     doc = SimpleDocTemplate(
         pdf_path,

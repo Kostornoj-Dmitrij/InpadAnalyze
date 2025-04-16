@@ -74,7 +74,7 @@ class KeyboardBuilder:
             ),
             InlineKeyboardButton(
                 text='Назад',
-                callback_data='start'
+                callback_data='back_to_categories'
             )
         )
         builder.adjust(1)
@@ -89,4 +89,15 @@ class KeyboardBuilder:
             InlineKeyboardButton(text='📊 Excel', callback_data='format_xls'),
         )
         builder.adjust(3)
+        return builder.as_markup()
+
+    @staticmethod
+    def back_to_categories_kb():
+        builder = InlineKeyboardBuilder()
+        builder.add(
+            InlineKeyboardButton(
+                text='Назад к выбору раздела',
+                callback_data='back_to_categories'
+            )
+        )
         return builder.as_markup()

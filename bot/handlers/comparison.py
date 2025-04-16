@@ -38,10 +38,34 @@ async def handle_category_selection(callback: types.CallbackQuery, state: FSMCon
         await callback.message.delete()
     except:
         pass
-    await state.update_data(category=callback.data)
-    await state.set_state(ComparisonStates.waiting_tz_file)
-    await callback.message.answer("Пожалуйста, загрузите файл с ТЗ:")
 
+    category_name = {
+        'arch_category': 'архитектурный раздел (АР)',
+        'constr_category': 'конструктивный раздел (КР)',
+        'eng_category': 'инженерный раздел (ИОС)',
+        'water_supply_category': 'раздел водоснабжения (ИОС)',
+        'water_drain_category': 'раздел водоотведения (ИОС)',
+        'heat_network_category': 'раздел тепловых сетей и ИТП (ИОС)',
+        'hvac_category': 'раздел ОВиК (ИОС)'
+    }.get(callback.data, callback.data)
+
+    await state.update_data(category=callback.data, category_name=category_name)
+    await state.set_state(ComparisonStates.waiting_tz_file)
+    await callback.message.answer("Пожалуйста, загрузите файл с ТЗ:",
+                                  reply_markup=KeyboardBuilder.back_to_categories_kb())
+
+
+@router.callback_query(F.data == 'back_to_categories')
+async def back_to_categories(callback: types.CallbackQuery, state: FSMContext):
+    user_data = await state.get_data()
+    if user_data.get('tz_file'):
+        await cleanup_temp_files([user_data['tz_file']])
+
+    await state.set_state(ComparisonStates.choosing_category)
+    await callback.message.edit_text(
+        "Выберите раздел для сравнения:",
+        reply_markup=KeyboardBuilder.categories_kb()
+    )
 
 @router.callback_query(ComparisonStates.waiting_format_choice, F.data.startswith('format_'))
 async def handle_format_choice(callback: types.CallbackQuery, state: FSMContext):
@@ -97,7 +121,10 @@ async def handle_tz_file(message: types.Message, state: FSMContext):
     user_data = await state.get_data()
     file_path = await process_pdf_file(message, message.bot)
     await state.update_data(tz_file=file_path)
-    await message.answer("Файл ТЗ успешно загружен. Теперь загрузите файл с результатом:")
+
+    category_name = user_data.get('category_name', 'выбранного раздела')
+
+    await message.answer(f"Файл ТЗ успешно загружен. Теперь загрузите файл с результатом ({category_name}):")
     await state.set_state(ComparisonStates.waiting_result_file)
 
 
