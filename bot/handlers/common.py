@@ -1,6 +1,6 @@
 from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
-from bot.keyboards.builders import KeyboardBuilder
+from keyboards.builders import KeyboardBuilder
 
 router = Router()
 

@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime, timedelta
 from collections import defaultdict
-from bot.config import OpenRouter_API_KEYS
+from config import OpenRouter_API_KEYS
 
 
 class OpenRouterKeyManager:

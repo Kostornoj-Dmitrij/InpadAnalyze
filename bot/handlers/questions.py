@@ -1,13 +1,13 @@
 from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
-from bot.keyboards.builders import KeyboardBuilder
+from keyboards.builders import KeyboardBuilder
 
-from bot.handlers.start import cmd_start
-from bot.models.states import QuestionStates
-from bot.services.file_processing import process_pdf_file
-from bot.services.analysis import generate_answer
+from handlers.start import cmd_start
+from models.states import QuestionStates
+from services.file_processing import process_pdf_file
+from services.analysis import generate_answer
 import os
-from bot.services.utils import send_long_message
+from services.utils import send_long_message
 import asyncio
 from aiogram import Bot
 

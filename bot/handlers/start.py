@@ -1,8 +1,8 @@
 from aiogram import Router, types
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
-from bot.keyboards.builders import KeyboardBuilder
-from bot.services.file_processing import cleanup_temp_files
+from keyboards.builders import KeyboardBuilder
+from services.file_processing import cleanup_temp_files
 
 
 router = Router()
