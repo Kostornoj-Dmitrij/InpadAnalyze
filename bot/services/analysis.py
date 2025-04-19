@@ -11,7 +11,7 @@ from langchain_openai import OpenAIEmbeddings
 from tqdm.asyncio import tqdm_asyncio
 from services.key_manager import key_manager
 from config import OPENAI_API_KEY
-
+from services.utils import generate_short_uuid
 
 async def extract_requirements(text: str, mode: str) -> str:
     """Извлекает инженерные требования по частям"""
@@ -650,7 +650,7 @@ async def async_write_file(filename: str, content: str):
         await f.write(content)
 
 
-async def analyze_documents(category: str, tz_path: str, result_path: str, user_id: int) -> str:
+async def analyze_documents(category: str, tz_path: str, result_path: str) -> str:
     print('Загрузка текстов')
     technical_text, result_text = await asyncio.gather(
         extract_text_from_pdf(tz_path),
@@ -716,7 +716,10 @@ async def analyze_documents(category: str, tz_path: str, result_path: str, user_
         final_report = await final_structure_report(structured_parts)
     else:
         final_report = await final_structure_report(report_parts)
-    report_filename = f"temp/{section_name}_{datetime.now().strftime("%d_%m_%Y")}_{user_id}.txt"
+
+    short_uuid = await generate_short_uuid()
+
+    report_filename = f"temp/{section_name}_{datetime.now().strftime("%d_%m_%Y")}_{short_uuid}.txt"
     await async_write_file(report_filename, final_report)
     return report_filename
 

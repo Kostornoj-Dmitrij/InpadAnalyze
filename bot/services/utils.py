@@ -1,6 +1,8 @@
 import os
 from aiogram import Bot
 import asyncio
+import uuid
+import base64
 
 async def cleanup_temp_files(*paths):
     for path in paths:
@@ -23,3 +25,9 @@ async def send_long_message(bot: Bot, chat_id: int, text: str, chunk_size: int =
 
         await bot.send_message(chat_id, chunk)
         await asyncio.sleep(delay)
+
+async def generate_short_uuid() -> str:
+    """Асинхронно генерирует короткий (6 символов) UUID"""
+    uuid_bytes = uuid.uuid4().bytes
+    encoded = base64.urlsafe_b64encode(uuid_bytes).decode('utf-8').rstrip('=')
+    return encoded[:6]

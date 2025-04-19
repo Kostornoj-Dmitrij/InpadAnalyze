@@ -150,8 +150,7 @@ async def handle_result_file(message: types.Message, state: FSMContext):
         report_path = await analyze_documents(
             category=category,
             tz_path=user_data['tz_file'],
-            result_path=result_path,
-            user_id=message.from_user.id
+            result_path=result_path
         )
 
         await state.update_data(report_path=report_path)
