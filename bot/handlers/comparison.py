@@ -1,7 +1,7 @@
 from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import FSInputFile
-
+import pandas as pd
 from handlers.start import cmd_start
 from keyboards.builders import KeyboardBuilder
 from models.states import ComparisonStates
@@ -101,6 +101,10 @@ async def handle_format_choice(callback: types.CallbackQuery, state: FSMContext)
                 caption="Отчет в формате Excel"
             )
 
+    except FileNotFoundError as e:
+        await callback.message.answer(f"Файл отчета не найден: {str(e)}")
+    except pd.errors.EmptyDataError:
+        await callback.message.answer("Отчет не содержит данных для экспорта")
     except Exception as e:
         await callback.message.answer(f"Ошибка при подготовке отчета: {str(e)}")
     finally:

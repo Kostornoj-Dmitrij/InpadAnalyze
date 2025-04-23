@@ -187,10 +187,24 @@ async def convert_to_xls(txt_path: str) -> str:
 
     df = pd.DataFrame(data)
 
-    df.fillna("", inplace=True)
+    df = df.fillna("")
 
-    df['Номер раздела'] = df['Раздел'].str.extract(r'Раздел (\d+)').astype(int)
-    df.sort_values(['Номер раздела', 'Подраздел'], inplace=True)
+    for col in df.columns:
+        if df[col].dtype == object:
+            df[col] = df[col].astype(str)
+
+    df['Номер раздела'] = df['Раздел'].apply(
+        lambda x: int(re.search(r'Раздел (\d+)', x).group(1))
+        if isinstance(x, str) and re.search(r'Раздел (\d+)', x)
+        else 0
+    )
+
+    if len(df[df['Номер раздела'] == 0]) != 0:
+        print("⚠️ Внимание: найдены строки, где не удалось извлечь номер раздела:")
+        print(df[df['Номер раздела'] == 0]['Раздел'].unique())
+
+    if len(df[df['Номер раздела'] != 0]) > 0:
+        df = df.sort_values(['Номер раздела', 'Подраздел'])
     df.drop('Номер раздела', axis=1, inplace=True)
 
     with pd.ExcelWriter(xls_path, engine='xlsxwriter') as writer:
