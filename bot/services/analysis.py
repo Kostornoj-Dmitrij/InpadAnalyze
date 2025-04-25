@@ -674,7 +674,7 @@ async def analyze_documents(category: str, tz_path: str, result_path: str) -> st
         "water_supply_category": "Система водоснабжения",
         "water_drain_category": "Система водоотведения",
         "heat_network_category": "Тепловые сети и ИТП",
-        "hvac_category": "Отопление, вентиляция и кондиционирование"
+        "hvac_category": "Отопление вентиляция и кондиционирование"
     }
 
     mode, section_name = mode_map.get(category, ('arch', 'Архитектурно-строительные решения'))
