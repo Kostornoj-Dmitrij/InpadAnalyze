@@ -200,6 +200,21 @@ async def extract_sections_from_ts(text: str, mode: str = "default") -> dict:
             start = match.start()
             title = match.group().strip()
             is_last_section = title.lower() == ALL_SECTION_TITLES[-1].lower()
+
+            page_start = text.rfind('=== НАЧАЛО СТРАНИЦЫ', 0, start)
+            if page_start != -1:
+                # Находим номер этой страницы
+                page_num_start = page_start + len('=== НАЧАЛО СТРАНИЦЫ ')
+                page_num_end = text.find(' ===', page_num_start)
+                if page_num_end != -1:
+                    page_num = text[page_num_start:page_num_end].strip()
+                    # Добавляем маркер начала страницы в начало раздела
+                    section_start = f"=== НАЧАЛО СТРАНИЦЫ {page_num} ===\n"
+                else:
+                    section_start = ""
+            else:
+                section_start = ""
+
             if is_last_section:
                 sections[title] = text[start:].strip()
                 print(f"Раздел '{title}' (последний) извлечен")
@@ -207,7 +222,7 @@ async def extract_sections_from_ts(text: str, mode: str = "default") -> dict:
             next_section = next((m for m in all_matches if m.start() > start), None)
             if next_section:
                 end = next_section.start()
-                sections[title] = text[start:end].strip()
+                sections[title] = section_start + text[start:end].strip()
                 print(f"Раздел '{title}' извлечен (конец: {next_section.group().strip()})")
             else:
                 print(f"Раздел '{title}' найден, но конец не определен. Переход к нейросети.")
@@ -297,8 +312,13 @@ def _sync_split_text(text: str, max_tokens: int, overlap: int) -> list[str]:
                 current_page = {'num': page_num, 'text': ''}
             except (IndexError, ValueError):
                 continue
+        elif line.startswith('=== КОНЕЦ СТРАНИЦЫ'):
+            if current_page is not None:
+                current_page['text'] += line + '\n'
+                pages.append(current_page)
+                current_page = None
 
-        elif current_page is not None and not line.startswith('=== КОНЕЦ СТРАНИЦЫ'):
+        elif current_page is not None:
             current_page['text'] += line + '\n'
     if current_page is not None:
         pages.append(current_page)
@@ -409,9 +429,11 @@ async def compare_documents(technical_spec, result_doc, mode: str = "arch"):
                                     f"Вот соответствующий результат работы:\n{result_doc}\n\n"
                                     "Найди несоответствия и укажи, что выполнено правильно, а что — нет. "
                                     "Обязательно указывай номера страниц, на которых найдены проблемы (И ИЗ ТЗ И ИЗ РЕЗУЛЬТАТА РАБОТЫ), ТОЛЬКО ОБЯЗАТЕЛЬНО УБЕДИСЬ ЧТО НЕ ПЕРЕПУТАЕШЬ ИХ, ЧТОБЫ НЕ БЫЛО ТАКОГО, ЧТО ТЫ УКАЗАЛ СТРАНИЦУ ТЗ = 61 ХОТЯ ИХ В ТЗ МЕНЬШЕ"
+                                    "При указывании страниц ориентируйся на конструкции '=== НАЧАЛО СТРАНИЦЫ {page_num} === И === КОНЕЦ СТРАНИЦЫ {page_num} ==='"
                                     f"{prompt['user']}"}
     ]
 
+    #print(messages)
     retries = 3
     while retries > 0:
         current_key = await key_manager.get_key()
