@@ -666,7 +666,20 @@ async def analyze_documents(category: str, tz_path: str, result_path: str) -> st
         "heat_network_category": ("heat_network", "Отопление, вентиляция и кондиционирование"),
         "hvac_category": ("hvac", "Отопление, вентиляция и кондиционирование")
     }
+
+    report_name_map = {
+        'arch_category': 'Архитектурно-строительные решения',
+        'constr_category': 'Конструктивные решения',
+        'eng_category': 'Инженерные системы (общий)',
+        "water_supply_category": "Система водоснабжения",
+        "water_drain_category": "Система водоотведения",
+        "heat_network_category": "Тепловые сети и ИТП",
+        "hvac_category": "Отопление, вентиляция и кондиционирование"
+    }
+
     mode, section_name = mode_map.get(category, ('arch', 'Архитектурно-строительные решения'))
+
+    report_name = report_name_map.get(category, 'Архитектурно-строительные решения')
 
     print('Получение требований из ТЗ')
     ts_sections = await extract_sections_from_ts(technical_text, mode=mode)
@@ -719,7 +732,7 @@ async def analyze_documents(category: str, tz_path: str, result_path: str) -> st
 
     short_uuid = await generate_short_uuid()
 
-    report_filename = f"temp/{section_name}_{datetime.now().strftime("%d_%m_%Y")}_{short_uuid}.txt"
+    report_filename = f"temp/{report_name}_{datetime.now().strftime("%d_%m_%Y")}_{short_uuid}.txt"
     await async_write_file(report_filename, final_report)
     return report_filename
 
