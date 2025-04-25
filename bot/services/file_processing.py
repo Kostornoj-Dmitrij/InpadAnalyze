@@ -11,8 +11,8 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate
 
-project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-#project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+#project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 print(project_dir)
 font_path = os.path.join(project_dir, 'fonts/DejaVuSans.ttf')
