@@ -291,7 +291,7 @@ def _sync_extract_text_from_pdf(pdf_path: str) -> str:
     return "\n".join(text)
 
 
-async def split_text(text: str, max_tokens: int = 24000, overlap: int = 1000) -> list[str]:
+async def split_text(text: str, max_tokens: int = 22000, overlap: int = 1000) -> list[str]:
     """Асинхронная версия разделения текста"""
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _sync_split_text, text, max_tokens, overlap)
@@ -425,12 +425,13 @@ async def compare_documents(technical_spec, result_doc, mode: str = "arch"):
     messages = [
         {"role": "system",
          "content": f"Ты эксперт по анализу документов. {prompt['system']} При анализе обязательно указывай номера страниц, на которых найдены несоответствия."},
-        {"role": "user", "content": f"Вот часть технического задания:\n{technical_spec}\n\n"
-                                    f"Вот соответствующий результат работы:\n{result_doc}\n\n"
-                                    "Найди несоответствия и укажи, что выполнено правильно, а что — нет. "
+        {"role": "user", "content": "Найди несоответствия и укажи, что выполнено правильно, а что — нет. "
                                     "Обязательно указывай номера страниц, на которых найдены проблемы (И ИЗ ТЗ И ИЗ РЕЗУЛЬТАТА РАБОТЫ), ТОЛЬКО ОБЯЗАТЕЛЬНО УБЕДИСЬ ЧТО НЕ ПЕРЕПУТАЕШЬ ИХ, ЧТОБЫ НЕ БЫЛО ТАКОГО, ЧТО ТЫ УКАЗАЛ СТРАНИЦУ ТЗ = 61 ХОТЯ ИХ В ТЗ МЕНЬШЕ"
                                     "При указывании страниц ориентируйся на конструкции '=== НАЧАЛО СТРАНИЦЫ {page_num} === И === КОНЕЦ СТРАНИЦЫ {page_num} ==='"
-                                    f"{prompt['user']}"}
+                                    f"{prompt['user']}"
+                                    f"Вот часть технического задания:\n{technical_spec}\n\n"
+                                    f"Вот соответствующий результат работы:\n{result_doc}\n\n"
+                                    }
     ]
     #print(total_tokens)
     #print(messages)
