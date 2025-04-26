@@ -12,10 +12,14 @@ from tqdm.asyncio import tqdm_asyncio
 from services.key_manager import key_manager
 from config import OPENAI_API_KEY
 from services.utils import generate_short_uuid
+from openai import AsyncOpenAI
+
+client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+
 
 async def extract_requirements(text: str, mode: str) -> str:
     """Извлекает инженерные требования по частям"""
-    chunks = await split_text(text, max_tokens=28000, overlap=500)
+    chunks = await split_text(text, max_tokens=60000, overlap=2000)
     all_requirements = []
 
     semaphore = asyncio.Semaphore(3)
@@ -106,41 +110,21 @@ async def extract_requirements(text: str, mode: str) -> str:
                 ]
             retries = 3
             while retries > 0:
-                current_key = await key_manager.get_key()
-                if not current_key:
-                    await asyncio.sleep(1)
-                    print("Все ключи исчерпаны")
-                    return None
                 try:
-                    async with aiohttp.ClientSession() as session:
-                        async with session.post(
-                            "https://openrouter.ai/api/v1/chat/completions",
-                            headers={"Authorization": f"Bearer {current_key}",
-                                     "Content-Type": "application/json"},
-                            json={"model": "deepseek/deepseek-chat:free", "messages": messages},
-                            timeout=aiohttp.ClientTimeout(total=150)
-                        ) as response:
-                            await key_manager.update_usage(current_key, response)
+                    completion = await client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=messages,
+                        timeout=150
+                    )
 
-                            if response.status == 200:
-                                result = await response.json()
-                                if 'choices' in result and len(result['choices']) > 0:
-                                    return result['choices'][0]['message']['content'].strip()
-                            elif response.status == 429:
-                                await asyncio.sleep(1)
-                                print(f"Ключ {current_key[-5:]}... исчерпан")
-                                await key_manager.handle_error(current_key)
-                                retries -= 1
-                                continue
-                            else:
-                                await asyncio.sleep(1)
-                                print(f"Ошибка {response.status} с ключом {current_key[-5:]}...")
-                                return None
+                    return completion.choices[0].message.content.strip()
+
                 except Exception as e:
                     await asyncio.sleep(1)
-                    print(f"Ошибка с ключом {current_key[-5:]}...: {str(e)}")
-                    await key_manager.handle_error(current_key)
+                    print(f"Ошибка при запросе к OpenAI: {str(e)}")
                     retries -= 1
+                    if retries == 0:
+                        return None
 
     tasks =[process_chunk(chunk) for chunk in chunks]
     for future in tqdm_asyncio.as_completed(tasks, desc="Извлечение требований"):
@@ -291,7 +275,7 @@ def _sync_extract_text_from_pdf(pdf_path: str) -> str:
     return "\n".join(text)
 
 
-async def split_text(text: str, max_tokens: int = 22000, overlap: int = 1000) -> list[str]:
+async def split_text(text: str, max_tokens: int = 80000, overlap: int = 5000) -> list[str]:
     """Асинхронная версия разделения текста"""
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _sync_split_text, text, max_tokens, overlap)
@@ -421,55 +405,39 @@ async def compare_documents(technical_spec, result_doc, mode: str = "arch"):
     }
 
     prompt = mode_prompts.get(mode, mode_prompts["engineer"])
-    #total_tokens = await count_tokens(str(technical_spec)) + await count_tokens(str(result_doc))
+    total_tokens = await count_tokens(str(technical_spec)) + await count_tokens(str(result_doc))
     messages = [
         {"role": "system",
          "content": f"Ты эксперт по анализу документов. {prompt['system']} При анализе обязательно указывай номера страниц, на которых найдены несоответствия."},
         {"role": "user", "content": "Найди несоответствия и укажи, что выполнено правильно, а что — нет. "
                                     "Обязательно указывай номера страниц, на которых найдены проблемы (И ИЗ ТЗ И ИЗ РЕЗУЛЬТАТА РАБОТЫ), ТОЛЬКО ОБЯЗАТЕЛЬНО УБЕДИСЬ ЧТО НЕ ПЕРЕПУТАЕШЬ ИХ, ЧТОБЫ НЕ БЫЛО ТАКОГО, ЧТО ТЫ УКАЗАЛ СТРАНИЦУ ТЗ = 61 ХОТЯ ИХ В ТЗ МЕНЬШЕ"
                                     "При указывании страниц ориентируйся на конструкции '=== НАЧАЛО СТРАНИЦЫ {page_num} === И === КОНЕЦ СТРАНИЦЫ {page_num} ==='"
+                                    "ЕСЛИ ЕСТЬ НЕСООТВЕТСТВИЯ ОБЯЗАТЕЛЬНО ГОВОРИ КАК ТРЕБУЕТ ТЗ, И КАК СДЕЛАНО В РЕЗУЛЬТАТЕ, ЧТОБЫ БЫЛО ПОНЯТНО ЧТО ИМЕННО НЕ ТАК"
                                     f"{prompt['user']}"
                                     f"Вот часть технического задания:\n{technical_spec}\n\n"
                                     f"Вот соответствующий результат работы:\n{result_doc}\n\n"
                                     }
     ]
-    #print(total_tokens)
+    print(total_tokens)
     #print(messages)
     retries = 3
     while retries > 0:
-        current_key = await key_manager.get_key()
-        if not current_key:
-            await asyncio.sleep(1)
-            print("Все ключи исчерпаны")
-            return ""
         try:
-            print("Отправлен запрос")
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {current_key}", "Content-Type": "application/json"},
-                    json={"model": "deepseek/deepseek-chat:free", "messages": messages, "temperature": 0},
-                    timeout=aiohttp.ClientTimeout(total=150)
-                ) as response:
-                    await key_manager.update_usage(current_key, response)
-                    if response.status == 200:
-                        result = await response.json()
-                        return result["choices"][0]["message"]["content"]
-                    elif response.status == 429:
-                        await asyncio.sleep(1)
-                        print(f"Ключ {current_key[-5:]}... исчерпан")
-                        await key_manager.handle_error(current_key)
-                        retries -= 1
-                        continue
-                    else:
-                        await asyncio.sleep(1)
-                        print(f"Ошибка {response.status} с ключом {current_key[-5:]}...")
-                        return ""
+            completion = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                temperature=0,
+                timeout=150
+            )
+
+            return completion.choices[0].message.content
+
         except Exception as e:
             await asyncio.sleep(1)
-            print(f"Ошибка с ключом {current_key[-5:]}...: {str(e)}")
-            await key_manager.handle_error(current_key)
+            print(f"Ошибка при запросе к OpenAI: {str(e)}")
             retries -= 1
+            if retries == 0:
+                return ""
     return ""
 
 
@@ -558,39 +526,22 @@ async def structure_report_part(report_part):
     ]
     retries = 3
     while retries > 0:
-        current_key = await key_manager.get_key()
-        if not current_key:
-            await asyncio.sleep(1)
-            print("Все ключи исчерпаны")
-            return ""
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {current_key}", "Content-Type": "application/json"},
-                    json={"model": "deepseek/deepseek-chat:free", "messages": messages, "temperature": 0},
-                    timeout=aiohttp.ClientTimeout(total=150)
-                ) as response:
-                    await key_manager.update_usage(current_key, response)
+            completion = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                temperature=0,
+                timeout=150
+            )
 
-                    if response.status == 200:
-                        result = await response.json()
-                        return result["choices"][0]["message"]["content"]
-                    elif response.status == 429:
-                        await asyncio.sleep(1)
-                        print(f"Ключ {current_key[-5:]}... исчерпан")
-                        await key_manager.handle_error(current_key)
-                        retries -= 1
-                        continue
-                    else:
-                        await asyncio.sleep(1)
-                        print(f"Ошибка {response.status} с ключом {current_key[-5:]}...")
-                        return ""
+            return completion.choices[0].message.content
+
         except Exception as e:
             await asyncio.sleep(1)
-            print(f"Ошибка с ключом {current_key[-5:]}...: {str(e)}")
-            await key_manager.handle_error(current_key)
+            print(f"Ошибка при запросе к OpenAI: {str(e)}")
             retries -= 1
+            if retries == 0:
+                return ""
     return ""
 
 
@@ -634,38 +585,22 @@ async def final_structure_report(structured_parts):
 
     retries = 3
     while retries > 0:
-        current_key = await key_manager.get_key()
-        if not current_key:
-            print("Все ключи исчерпаны")
-            return ""
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {current_key}", "Content-Type": "application/json"},
-                    json={"model": "deepseek/deepseek-chat:free", "messages": messages, "temperature": 0},
-                    timeout=aiohttp.ClientTimeout(total=150)
-                ) as response:
-                    await key_manager.update_usage(current_key, response)
+            completion = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                temperature=0,
+                timeout=150
+            )
 
-                    if response.status == 200:
-                        result = await response.json()
-                        return result["choices"][0]["message"]["content"]
-                    elif response.status == 429:
-                        await asyncio.sleep(1)
-                        print(f"Ключ {current_key[-5:]}... исчерпан")
-                        await key_manager.handle_error(current_key)
-                        retries -= 1
-                        continue
-                    else:
-                        await asyncio.sleep(1)
-                        print(f"Ошибка {response.status} с ключом {current_key[-5:]}...")
-                        return ""
+            return completion.choices[0].message.content
+
         except Exception as e:
             await asyncio.sleep(1)
-            print(f"Ошибка с ключом {current_key[-5:]}...: {str(e)}")
-            await key_manager.handle_error(current_key)
+            print(f"Ошибка при запросе к OpenAI: {str(e)}")
             retries -= 1
+            if retries == 0:
+                return ""
     return ""
 
 async def async_write_file(filename: str, content: str):
@@ -765,7 +700,7 @@ async def generate_answer(file_path: str, question: str) -> str:
         raw_text = await extract_text_from_pdf(file_path)
         print("Извлечённый текст")
         print(len(raw_text))
-        chunks = await split_text(raw_text, max_tokens=8000, overlap=500)
+        chunks = await split_text(raw_text, max_tokens=34000, overlap=1000)
         print(len(chunks))
         vector_db = await create_vector_db(chunks)
 
@@ -779,11 +714,12 @@ async def generate_answer(file_path: str, question: str) -> str:
             doc_content = doc.page_content
             doc_tokens = len(tokenizer.encode(doc_content))
 
-            if total_tokens + doc_tokens > 26000:
+            if total_tokens + doc_tokens > 105000:
                 break
 
             context.append(doc_content)
             total_tokens += doc_tokens
+
         messages = [
             {
                 "role": "system",
@@ -812,45 +748,25 @@ async def generate_answer(file_path: str, question: str) -> str:
         ]
         retries = 3
         while retries > 0:
-            current_key = await key_manager.get_key()
-            if not current_key:
-                print("Все ключи исчерпаны")
-                return "Произошла ошибка: все ключи API исчерпаны"
-
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        "https://openrouter.ai/api/v1/chat/completions",
-                        headers={"Authorization": f"Bearer {current_key}"},
-                        json={
-                            "model": "deepseek/deepseek-chat:free",
-                            "messages": messages,
-                            "temperature": 0.3,
-                            "max_tokens": 2000
-                        }
-                    ) as response:
-                        await key_manager.update_usage(current_key, response)
+                client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
-                        if response.status == 200:
-                            result = await response.json()
-                            return result['choices'][0]['message']['content']
-                        elif response.status == 429:
-                            await asyncio.sleep(1)
-                            print(f"Ключ {current_key[-5:]}... исчерпан")
-                            await key_manager.handle_error(current_key)
-                            retries -= 1
-                            continue
-                        else:
-                            await asyncio.sleep(1)
-                            error_text = await response.text()
-                            print(f"API Error {response.status}: {error_text[:200]}")
-                            return "Произошла ошибка при обработке запроса"
+                completion = await client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=messages,
+                    temperature=0.3,
+                    max_tokens=2000,
+                    timeout=150
+                )
+
+                return completion.choices[0].message.content
             except Exception as e:
                 await asyncio.sleep(1)
-                print(f"Ошибка с ключом {current_key[-5:]}...: {str(e)}")
-                await key_manager.handle_error(current_key)
+                print(f"Ошибка при запросе: {str(e)}")
                 retries -= 1
-        return "Произошла внутренная ошибка"
+                if retries == 0:
+                    return "Произошла ошибка при обработке запроса"
+        return "Произошла внутренняя ошибка: превышено количество попыток"
     except Exception as e:
         await asyncio.sleep(1)
         print(f"Unexpected error: {str(e)}")
