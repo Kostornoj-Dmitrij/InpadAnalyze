@@ -12,6 +12,6 @@ __pycache__/
 logs/
 *.log
 
-data/new_data/config.py
+bot/config.py
 
 deepseek_results/
