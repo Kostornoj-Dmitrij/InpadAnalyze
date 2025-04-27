@@ -23,6 +23,7 @@ async def extract_requirements(text: str, mode: str) -> str:
     all_requirements = []
 
     semaphore = asyncio.Semaphore(3)
+
     async def process_chunk(chunk: str):
         nonlocal mode
         async with semaphore:
@@ -35,7 +36,7 @@ async def extract_requirements(text: str, mode: str) -> str:
                     {
                         "role": "user",
                         "content": f"Извлеки архитектурно-строительные требования (если они есть) из этого фрагмента:\n{chunk}"
-                                    "Если в тексте есть отметки страниц: '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' ИЛИ '=== КОНЕЦ СТРАНИЦЫ {page_num} ===', и ты нашёл на этой странице какое-то требование, то НИ В КОЕМ СЛУЧАЕ НЕ УДАЛЯЙ МЕТКИ, мне нужно чтобы найденные тобой требования были абсолютно в том же виде окантованы этими метками! ВСЕ МЕТКИ СТРАНИЦ ДОЛЖНЫ БЫТЬ В ФОРМАТЕ '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' текст страницы... '=== КОНЕЦ СТРАНИЦЫ {page_num} ===')"                    }
+                                   "Если в тексте есть отметки страниц: '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' ИЛИ '=== КОНЕЦ СТРАНИЦЫ {page_num} ===', и ты нашёл на этой странице какое-то требование, то НИ В КОЕМ СЛУЧАЕ НЕ УДАЛЯЙ МЕТКИ, мне нужно чтобы найденные тобой требования были абсолютно в том же виде окантованы этими метками! ВСЕ МЕТКИ СТРАНИЦ ДОЛЖНЫ БЫТЬ В ФОРМАТЕ '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' текст страницы... '=== КОНЕЦ СТРАНИЦЫ {page_num} ===')"}
                 ]
             elif mode == 'structural':
                 messages = [
@@ -106,7 +107,7 @@ async def extract_requirements(text: str, mode: str) -> str:
                     {
                         "role": "user",
                         "content": f"Извлеки инженерные требования (если они есть) из этого фрагмента:\n{chunk}"
-                                    "Если в тексте есть отметки страниц: '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' ИЛИ '=== КОНЕЦ СТРАНИЦЫ {page_num} ===', и ты нашёл на этой странице какое-то требование, то НИ В КОЕМ СЛУЧАЕ НЕ УДАЛЯЙ МЕТКИ, мне нужно чтобы найденные тобой требования были абсолютно в том же виде окантованы этими метками! ВСЕ МЕТКИ СТРАНИЦ ДОЛЖНЫ БЫТЬ В ФОРМАТЕ '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' текст страницы... '=== КОНЕЦ СТРАНИЦЫ {page_num} ===')"                    }
+                                   "Если в тексте есть отметки страниц: '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' ИЛИ '=== КОНЕЦ СТРАНИЦЫ {page_num} ===', и ты нашёл на этой странице какое-то требование, то НИ В КОЕМ СЛУЧАЕ НЕ УДАЛЯЙ МЕТКИ, мне нужно чтобы найденные тобой требования были абсолютно в том же виде окантованы этими метками! ВСЕ МЕТКИ СТРАНИЦ ДОЛЖНЫ БЫТЬ В ФОРМАТЕ '=== НАЧАЛО СТРАНИЦЫ {page_num} ===' текст страницы... '=== КОНЕЦ СТРАНИЦЫ {page_num} ===')"}
                 ]
             retries = 3
             while retries > 0:
@@ -126,7 +127,7 @@ async def extract_requirements(text: str, mode: str) -> str:
                     if retries == 0:
                         return None
 
-    tasks =[process_chunk(chunk) for chunk in chunks]
+    tasks = [process_chunk(chunk) for chunk in chunks]
     for future in tqdm_asyncio.as_completed(tasks, desc="Извлечение требований"):
         result = await future
         if result:
@@ -134,6 +135,7 @@ async def extract_requirements(text: str, mode: str) -> str:
         await asyncio.sleep(0.5)
 
     return "\n".join(filter(None, all_requirements))
+
 
 async def extract_sections_from_ts(text: str, mode: str = "default") -> dict:
     """Разбивает текст ТЗ на разделы с возможностью нейросетевого анализа"""
@@ -171,7 +173,6 @@ async def extract_sections_from_ts(text: str, mode: str = "default") -> dict:
         print("Требования извлечены")
         return sections
 
-
     all_pattern = '|'.join(re.escape(title) for title in ALL_SECTION_TITLES)
     all_matches = list(re.finditer(all_pattern, text, re.IGNORECASE))
 
@@ -187,12 +188,10 @@ async def extract_sections_from_ts(text: str, mode: str = "default") -> dict:
 
             page_start = text.rfind('=== НАЧАЛО СТРАНИЦЫ', 0, start)
             if page_start != -1:
-                # Находим номер этой страницы
                 page_num_start = page_start + len('=== НАЧАЛО СТРАНИЦЫ ')
                 page_num_end = text.find(' ===', page_num_start)
                 if page_num_end != -1:
                     page_num = text[page_num_start:page_num_end].strip()
-                    # Добавляем маркер начала страницы в начало раздела
                     section_start = f"=== НАЧАЛО СТРАНИЦЫ {page_num} ===\n"
                 else:
                     section_start = ""
@@ -252,6 +251,7 @@ async def count_tokens(text: str) -> int:
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _sync_count_tokens, text)
 
+
 def _sync_count_tokens(text: str) -> int:
     """Синхронная реализация подсчета токенов"""
     tokenizer = tiktoken.get_encoding("cl100k_base")
@@ -279,6 +279,7 @@ async def split_text(text: str, max_tokens: int = 80000, overlap: int = 5000) ->
     """Асинхронная версия разделения текста"""
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _sync_split_text, text, max_tokens, overlap)
+
 
 def _sync_split_text(text: str, max_tokens: int, overlap: int) -> list[str]:
     """Разделяет текст на чанки с перекрытием, сохраняя информацию о страницах."""
@@ -347,6 +348,7 @@ async def create_vector_db(text_chunks):
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _sync_create_vector_db, text_chunks)
 
+
 def _sync_create_vector_db(text_chunks):
     """Создаёт векторную базу данных для семантического поиска."""
     if not text_chunks:
@@ -398,8 +400,8 @@ async def compare_documents(technical_spec, result_doc, mode: str = "arch"):
         "engineer": {
             "system": "Анализ инженерных систем."
                       "Если производитель или материал совпадает - несоответствия нет. "
-                    "Если производитель или материал отличается, но в ТЗ есть пометка о том, что аналог из результата можно использовать - несоответствия нет. "
-                    "Если производитель или материал отличается и аналог не допускается - укажи как несоответствие.",
+                      "Если производитель или материал отличается, но в ТЗ есть пометка о том, что аналог из результата можно использовать - несоответствия нет. "
+                      "Если производитель или материал отличается и аналог не допускается - укажи как несоответствие.",
             "user": "Проверь соответствие инженерных требований и реализации. Особое внимание удели соответствию указанного оборудования (отопление, вентиляция), производителей, технических параметров и т. д."
         }
     }
@@ -416,10 +418,10 @@ async def compare_documents(technical_spec, result_doc, mode: str = "arch"):
                                     f"{prompt['user']}"
                                     f"Вот часть технического задания:\n{technical_spec}\n\n"
                                     f"Вот соответствующий результат работы:\n{result_doc}\n\n"
-                                    }
+         }
     ]
     print(total_tokens)
-    #print(messages)
+    # print(messages)
     retries = 3
     while retries > 0:
         try:
@@ -470,6 +472,7 @@ async def split_text_summarized(text: str, max_tokens: int = 13000) -> list[str]
     """Асинхронная версия разделения текста"""
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _sync_split_text_summarized, text, max_tokens)
+
 
 def _sync_split_text_summarized(text: str, max_tokens: int) -> list[str]:
     """Разделяет текст на части по количеству токенов."""
@@ -603,6 +606,7 @@ async def final_structure_report(structured_parts):
                 return ""
     return ""
 
+
 async def async_write_file(filename: str, content: str):
     async with aiofiles.open(filename, "w", encoding="utf-8") as f:
         await f.write(content)
@@ -724,19 +728,19 @@ async def generate_answer(file_path: str, question: str) -> str:
             {
                 "role": "system",
                 "content": """Ты эксперт по анализу строительной документации. Анализируй вопросы строго по правилам:
-        
+
                 1. ЕСЛИ ВОПРОС:
                 - Слишком общий ("Какие материалы?")
                 - Не содержит конкретики ("Что тут написано?")
                 - Не относится к документу ("Как погода?")
                 - Непонятен или бессмыслен ("Абракадабра")
                 ТО Ответ: "Вопрос слишком общий или не относится к документации."
-                
+
                 2. ЕСЛИ ВОПРОС В ЦЕЛОМ КОРРЕКТЕН:
                 - Используй ТОЛЬКО предоставленные фрагменты
                 - Указывай страницы в формате [Страница X]
                 - Если ответа нет, то "Информация не найдена в документах"
-                
+
                 3. ОСОБЫЕ СЛУЧАИ:
                 - При запросе сравнений → укажи оба источника
                 - При технических терминах → давай точные формулировки из текста"""
